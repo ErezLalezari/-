@@ -1085,7 +1085,7 @@ function Tutor({nav}) {
       <div ref={bottomRef}/>
     </div>
     <div style={{display:"flex",gap:8,flexShrink:0,paddingTop:8}}>
-      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey)send();}} placeholder="שאלי כל שאלה על התנ\"ך..." dir="rtl" style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"12px 14px",color:T.text,fontSize:15,outline:"none",fontFamily:"inherit"}}/>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey)send();}} placeholder="שאלי כל שאלה על התנ״ך..." dir="rtl" style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"12px 14px",color:T.text,fontSize:15,outline:"none",fontFamily:"inherit"}}/>
       <button onClick={send} disabled={!input.trim()||loading} style={{background:`linear-gradient(135deg,#00C9FF,#92FE9D)`,border:"none",borderRadius:T.r.md,padding:"12px 16px",cursor:"pointer",color:"#0a2a1a",fontWeight:700,fontSize:18,flexShrink:0,opacity:!input.trim()||loading?0.5:1}}>▶</button>
     </div>
   </div>);
