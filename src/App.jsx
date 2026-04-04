@@ -450,7 +450,7 @@ const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAn
 
 function load() {
   try { const r=localStorage.getItem(STORAGE_KEY); return r?{...INIT,...JSON.parse(r),session:null}:INIT; }
-  catch { return INIT; }
+  catch(e) { return INIT; }
 }
 function save(s) {
   try { const p={}; PKEYS.forEach(k=>p[k]=s[k]); localStorage.setItem(STORAGE_KEY,JSON.stringify(p)); } catch(e) {}
