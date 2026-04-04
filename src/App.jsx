@@ -588,7 +588,7 @@ ${context ? `הקשר: ${context}` : ""}
 שאלת הילדה: "${userMessage}"
 ענה בעברית פשוטה, קצר (2-4 משפטים), חם ומעניין. אל תסביר יותר מדי.`;
   try { return await callClaude(prompt,400); }
-  catch { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
+  catch(e) { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
 }
 
 // Audio/Haptic
