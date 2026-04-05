@@ -1599,6 +1599,53 @@ function Parent({nav}) {
 // ─────────────────────────────────────────────
 // [11] ROUTER
 // ─────────────────────────────────────────────
+
+function FeedbackBtn({screen}){
+  const[open,setOpen]=useState(false);
+  const[text,setText]=useState('');
+  const[sent,setSent]=useState(false);
+  const[loading,setLoading]=useState(false);
+  const send=async()=>{
+    if(!text.trim())return;
+    setLoading(true);
+    try{await supabase.from('feedback').insert({text:text.trim(),screen,done:false});setSent(true);setText('');setTimeout(()=>{setSent(false);setOpen(false);},2000);}catch(e){}
+    setLoading(false);
+  };
+  if(!supabase)return null;
+  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:20,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:44,height:44,fontSize:20,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
+  {open&&<div style={{position:'fixed',bottom:72,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
+    <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:'#FFD700'}}>💬 ספרי לנו</div>
+    {sent?<div style={{color:'#5DFC8A',textAlign:'center'}}>נשלח תודה</div>:<>
+      <textarea value={text} onChange={e=>setText(e.target.value)} placeholder='מה לא עבד? מה אפשר לשפר?' dir='rtl' rows={3} style={{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:'10px 12px',color:'#fff',fontSize:14,resize:'none',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+      <div style={{display:'flex',gap:8,marginTop:8}}>
+        <button onClick={send} disabled={loading} style={{flex:1,background:'linear-gradient(135deg,#FFD700,#FFA500)',color:'#1a0533',border:'none',borderRadius:18,padding:'12px',fontWeight:700,cursor:'pointer'}}>{loading?'שולח...':'שלח'}</button>
+        <button onClick={()=>setOpen(false)} style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:18,padding:'12px 16px',color:'#fff',cursor:'pointer'}}>X</button>
+      </div>
+    </>}
+  </div>}
+  </>);
+}
+function FeedbackDashboard(){
+  const[items,setItems]=useState([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{if(!supabase)return;supabase.from('feedback').select('*').order('created_at',{ascending:false}).then(({data})=>{setItems(data||[]);setLoading(false);});},[]);
+  const toggle=async(id,done)=>{await supabase.from('feedback').update({done:!done}).eq('id',id);setItems(items.map(i=>i.id===id?{...i,done:!done}:i));};
+  const del=async(id)=>{await supabase.from('feedback').delete().eq('id',id);setItems(items.filter(i=>i.id!==id));};
+  if(!supabase)return null;
+  if(loading)return<div style={{textAlign:'center',color:'rgba(255,255,255,0.45)',padding:20}}>טוען...</div>;
+  if(!items.length)return<div style={{textAlign:'center',color:'rgba(255,255,255,0.45)',padding:20}}>אין פידבקים עדיין</div>;
+  return<div>{items.map(item=><div key={item.id} style={{background:item.done?'rgba(93,252,138,0.05)':'rgba(255,255,255,0.05)',border:'1px solid '+(item.done?'rgba(93,252,138,0.33)':'rgba(255,255,255,0.1)'),borderRadius:18,padding:'12px 14px',marginBottom:8}}>
+    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+      <span style={{fontSize:11,color:'rgba(255,255,255,0.45)'}}>{new Date(item.created_at).toLocaleDateString('he-IL')} · {item.screen||'כללי'}</span>
+      <div style={{display:'flex',gap:6}}>
+        <button onClick={()=>toggle(item.id,item.done)} style={{background:'none',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'2px 8px',cursor:'pointer',color:item.done?'#5DFC8A':'rgba(255,255,255,0.45)',fontSize:12}}>{item.done?'טופל':'טפל'}</button>
+        <button onClick={()=>del(item.id)} style={{background:'none',border:'1px solid rgba(255,107,107,0.44)',borderRadius:6,padding:'2px 8px',cursor:'pointer',color:'#FF6B6B',fontSize:12}}>מחק</button>
+      </div>
+    </div>
+    <div style={{fontSize:14,lineHeight:1.6,opacity:item.done?0.5:1}}>{item.text}</div>
+  </div>)}</div>;
+}
+
 const SCREENS = {
   home:Home, intro:BookIntro, quiz:Quiz, result:Result,
   daily:DailyChallenge, aigen:AIGenerator, tutor:Tutor,
@@ -1634,6 +1681,7 @@ function Router() {
     `}</style>
     <div style={{maxWidth:460,margin:`${online?"0":"36px"} auto 0`,padding:"16px 14px 50px",position:"relative",zIndex:1}}>
       <Screen nav={nav} params={route.params} online={online}/>
+<FeedbackBtn screen={route.screen}/>
     </div>
   </div>;
 }
