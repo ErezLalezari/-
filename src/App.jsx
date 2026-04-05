@@ -1838,9 +1838,9 @@ function ParentSummary(){
         <Stat label="היום" value={a.todayTotal>0?`${a.todayPct}%`:'—'} color={a.todayPct>=70?'#5DFC8A':'#FFD700'} sub={a.todayTotal>0?`${a.todayTotal} שאלות`:'לא למדה'}/>
       </div>
       <div style={{display:'flex',gap:8}}>
-        <Stat label="זמן ממוצע" value={`${a.avgTime}ש׳`} color="#45B7D1"/>
-        <Stat label="נכון" value={`${a.avgTimeCorrect}ש׳`} color="#5DFC8A" sub="ממוצע"/>
-        <Stat label="שגוי" value={`${a.avgTimeWrong}ש׳`} color="#FF6B6B" sub="ממוצע"/>
+        <Stat label="זמן ממוצע" value={`${a.avgTime}″`} color="#45B7D1"/>
+        <Stat label="נכון" value={`${a.avgTimeCorrect}″`} color="#5DFC8A" sub="ממוצע"/>
+        <Stat label="שגוי" value={`${a.avgTimeWrong}″`} color="#FF6B6B" sub="ממוצע"/>
       </div>
     </Card>
 
@@ -1868,7 +1868,7 @@ function ParentSummary(){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
           <span style={{fontSize:15,fontWeight:600,color:'#fff'}}>{t.emoji} {t.name}</span>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{t.avgTime}ש׳</span>
+            <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{t.avgTime}″</span>
             <span style={{fontSize:16,fontWeight:700,color:t.pct>=70?'#5DFC8A':t.pct>=50?'#FFD700':'#FF6B6B'}}>{t.pct}%</span>
             <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{t.correct}/{t.total}</span>
           </div>
@@ -1885,7 +1885,7 @@ function ParentSummary(){
           <span style={{fontSize:16,fontWeight:700,color:'#FF6B6B'}}>{t.emoji} {t.name}</span>
           <span style={{fontSize:20,fontWeight:800,color:'#FF6B6B'}}>{t.pct}%</span>
         </div>
-        <div style={{fontSize:13,color:'rgba(255,255,255,0.45)',marginTop:4}}>{t.wrongCount} שגיאות | זמן ממוצע: {t.avgTime} שניות | {t.total} שאלות</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.45)',marginTop:4}}>{t.wrongCount} שגיאות | זמן ממוצע: {t.avgTime} שניות לתשובה | {t.total} שאלות</div>
       </div>)}
     </Card>}
 
@@ -1899,13 +1899,13 @@ function ParentSummary(){
     {/* SPEED ANALYSIS */}
     <Card title="ניתוח מהירות" emoji="⏱️">
       <div style={{display:'flex',gap:8,marginBottom:12}}>
-        <Stat label="זמן ממוצע" value={`${a.avgTime}ש׳`} color="#45B7D1"/>
+        <Stat label="זמן ממוצע" value={`${a.avgTime}″`} color="#45B7D1"/>
         <Stat label="תשובות איטיות" value={a.slowCount} color={a.slowCount>5?'#FF6B6B':'#FFD700'} sub="מעל 15 שניות"/>
       </div>
       <div style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.6)'}}>
         {a.avgTimeWrong>a.avgTimeCorrect*1.5
-          ?`תשובות שגויות לוקחות הרבה יותר זמן (${a.avgTimeWrong}ש׳ vs ${a.avgTimeCorrect}ש׳) — כשלייה מהססת, היא לרוב טועה. מומלץ לעודד תשובות מהירות יותר.`
-          :`הפרש הזמנים בין נכון לשגוי קטן (${a.avgTimeCorrect}ש׳ vs ${a.avgTimeWrong}ש׳) — לייה עקבית בקצב.`}
+          ?`תשובות שגויות לוקחות הרבה יותר זמן (${a.avgTimeWrong} שניות vs ${a.avgTimeCorrect} שניות) — כשלייה מהססת, היא לרוב טועה. מומלץ לעודד תשובות מהירות יותר.`
+          :`הפרש הזמנים בין נכון לשגוי קטן (${a.avgTimeCorrect} שניות vs ${a.avgTimeWrong} שניות) — לייה עקבית בקצב.`}
       </div>
     </Card>
 
