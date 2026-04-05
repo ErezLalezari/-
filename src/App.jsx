@@ -558,8 +558,8 @@ async function callClaude(prompt, maxTokens=400) {
 async function explainAnswer({q,correct,userAnswer,isCorrect,isOpen}) {
   const ca = q.type===Q.MULTIPLE ? q.a : (q.acceptedAnswers||[])[0]||"";
   const prompt = isCorrect
-    ? `ענתה נכון: "${ca}". משפט עידוד אחד קצרצר בעברית, גוף שני נקבה. ללא פתיח.`
-    : `שאלה: "${q.q}". ענתה: "${userAnswer}". נכון: "${ca}". משפט הסבר אחד קצר בעברית, גוף שני נקבה, חיובי.`;
+    ? `ענתה נכון על שאלת תנ"ך: "${q.q}". כתבי משפט עידוד קצר לילדה בת 10.`
+    : `שאלת תנ"ך לילדה בת 10: "${q.q}". ענתה: "${userAnswer}". נכון: "${ca}". הסבר ב-2 משפטים פשוטים: מה נכון ולמה. אם יש מילה קשה הסבר בסוגריים.`;
   try { return await callClaude(prompt,200); } catch(e) { return isCorrect ? `✅ ${q.exp}` : `💡 ${ca}. ${q.exp}`; }
 }
 
