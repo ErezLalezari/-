@@ -25,7 +25,7 @@ import {
 // ─── SUPABASE ──────────────────────────────────
 import { createClient } from '@supabase/supabase-js';
 const SUPA_URL = "https://mibqnkhvbgoavwamhmnp.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4MDI0NTIsImV4cCI6MjA1OTM3ODQ1Mn0.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA";
 const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
 async function syncToCloud(state) {
@@ -809,7 +809,7 @@ function OpenInput({onSubmit,disabled,correct}) {
   const go=()=>{if(v.trim()&&!disabled)onSubmit(v.trim());};
   return <div style={{marginBottom:10}}>
     <input value={v} onChange={e=>setV(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")go();}}
-      disabled={disabled} eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA="כתבי את תשובתך..." dir="rtl"
+      disabled={disabled} placeholder="כתבי את תשובתך..." dir="rtl"
       style={{width:"100%",background:disabled?(correct?"rgba(93,252,138,0.1)":"rgba(255,107,107,0.1)"):"rgba(255,255,255,0.06)",border:`2px solid ${disabled?(correct?T.success:T.danger):T.border}`,borderRadius:T.r.md,padding:"13px 14px",color:T.text,fontSize:16,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
     {!disabled&&<Btn onClick={go} disabled={!v.trim()} style={{marginTop:8,marginBottom:0}}>שלחי ▶</Btn>}
   </div>;
@@ -1121,7 +1121,7 @@ function Tutor({nav}) {
       <div ref={bottomRef}/>
     </div>
     <div style={{display:"flex",gap:8,flexShrink:0,paddingTop:8}}>
-      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey)send();}} eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA="שאלי כל שאלה על התנ״ך..." dir="rtl" style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"12px 14px",color:T.text,fontSize:15,outline:"none",fontFamily:"inherit"}}/>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey)send();}} placeholder="שאלי כל שאלה על התנ״ך..." dir="rtl" style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"12px 14px",color:T.text,fontSize:15,outline:"none",fontFamily:"inherit"}}/>
       <button onClick={send} disabled={!input.trim()||loading} style={{background:`linear-gradient(135deg,#00C9FF,#92FE9D)`,border:"none",borderRadius:T.r.md,padding:"12px 16px",cursor:"pointer",color:"#0a2a1a",fontWeight:700,fontSize:18,flexShrink:0,opacity:!input.trim()||loading?0.5:1}}>▶</button>
     </div>
   </div>);
@@ -1475,7 +1475,7 @@ function Glossary({nav}) {
   const filtered=GLOSSARY.filter(g=>g.t.includes(search)||g.d.includes(search));
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📖 מילון מושגים</h2></div>
-    <input value={search} onChange={e=>setSearch(e.target.value)} eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA="חפשי מושג..." dir="rtl" style={{width:"100%",background:T.glass,border:`1.5px solid ${T.border}`,borderRadius:T.r.md,padding:"11px 14px",color:T.text,fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:12}}/>
+    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="חפשי מושג..." dir="rtl" style={{width:"100%",background:T.glass,border:`1.5px solid ${T.border}`,borderRadius:T.r.md,padding:"11px 14px",color:T.text,fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:12}}/>
     {filtered.map((g,i)=><div key={i} style={{background:T.glass,borderRadius:T.r.md,padding:"12px 14px",marginBottom:8,border:`1px solid ${T.border}`}}>
       <div style={{fontWeight:800,fontSize:16,color:T.gold,marginBottom:3}}>{g.t}</div>
       <div style={{fontSize:13,color:"rgba(255,255,255,0.8)",lineHeight:1.6}}>{g.d}</div>
@@ -1496,7 +1496,7 @@ function Parent({nav}) {
     <Card style={{textAlign:"center",padding:36}}>
       <div style={{fontSize:48,marginBottom:12}}>🔒</div>
       <h3 style={{margin:"0 0 16px",color:T.muted,fontSize:15}}>הזן קוד הורה</h3>
-      <input type="password" maxLength={4} value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){if(pin===PARENT_PIN){setOk(true);setErr(false);}else setErr(true);}}} eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA="קוד 4 ספרות" style={{width:"100%",textAlign:"center",fontSize:28,letterSpacing:12,background:"rgba(255,255,255,0.07)",border:`2px solid ${err?T.danger:T.border}`,borderRadius:T.r.md,padding:14,color:T.text,outline:"none",boxSizing:"border-box",fontFamily:"monospace"}} autoFocus/>
+      <input type="password" maxLength={4} value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){if(pin===PARENT_PIN){setOk(true);setErr(false);}else setErr(true);}}} placeholder="קוד 4 ספרות" style={{width:"100%",textAlign:"center",fontSize:28,letterSpacing:12,background:"rgba(255,255,255,0.07)",border:`2px solid ${err?T.danger:T.border}`,borderRadius:T.r.md,padding:14,color:T.text,outline:"none",boxSizing:"border-box",fontFamily:"monospace"}} autoFocus/>
       {err&&<div style={{color:T.danger,marginTop:8,fontSize:13}}>קוד שגוי ⚠️</div>}
       <Btn onClick={()=>{if(pin===PARENT_PIN){setOk(true);setErr(false);}else setErr(true);}} style={{marginTop:16,marginBottom:0}}>כניסה</Btn>
       <p style={{fontSize:11,color:T.muted}}>ברירת מחדל: 1234</p>
