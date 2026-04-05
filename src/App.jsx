@@ -1715,7 +1715,7 @@ function ParentSummary(){
   if(loading)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>טוען סיכום...</div>;
   if(!data)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>לא ניתן לטעון</div>;
 
-  return<div style={{direction:'rtl',padding:'20px 4px',maxWidth:600,margin:'0 auto',width:'100%'}}>
+  return<div style={{direction:'rtl',padding:'24px 16px',width:'100%',minHeight:'100vh'}}>
     <div style={{textAlign:'center',marginBottom:28}}>
       <div style={{fontSize:32,marginBottom:6}}>📊</div>
       <h2 style={{color:'#FFD700',margin:'0 0 6px',fontSize:26,fontWeight:800}}>סיכום הורים — לייה</h2>
@@ -1749,8 +1749,8 @@ const SCREENS = {
 };
 
 function Router() {
-  const [splash,setSplash]=useState(()=>!sessionStorage.getItem("v4"));
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"home";
+  const [splash,setSplash]=useState(()=>initScreen!=="summary"&&!sessionStorage.getItem("v4"));
   const [route,setRoute]=useState({screen:initScreen,params:{}});
   const online=useOnline();
 
@@ -1775,7 +1775,7 @@ function Router() {
       input:focus,select:focus{outline:none;border-color:${T.gold} !important;}
       ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
     `}</style>
-    <div style={{maxWidth:460,margin:`${online?"0":"36px"} auto 0`,padding:"16px 14px 50px",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:route.screen==="summary"?"100%":460,margin:`${online?"0":"36px"} auto 0`,padding:route.screen==="summary"?"0 0 50px":"16px 14px 50px",position:"relative",zIndex:1}}>
       <Screen nav={nav} params={route.params} online={online}/>
 <FeedbackBtn screen={route.screen}/>
     </div>
