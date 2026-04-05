@@ -624,6 +624,24 @@ function Store({children}) {
   const [state,dispatch] = useReducer(reducer,null,load);
   useEffect(()=>save(state),[state]);
   useEffect(()=>dispatch({type:"STREAK"}),[]);
+
+  // Load extra questions from Supabase and merge into DB
+  useEffect(()=>{
+    if(!supabase) return;
+    supabase.from("questions").select("*").then(({data})=>{
+      if(!data||!data.length) return;
+      data.forEach(row=>{
+        if(!DB[row.topic]) DB[row.topic]=[];
+        if(DB[row.topic].some(q=>q.id===row.id)) return;
+        const q = {id:row.id, type:row.type==="open"?Q.OPEN:Q.MULTIPLE, q:row.q, hint:row.hint||"", exp:row.exp||""};
+        if(row.type==="open") q.acceptedAnswers=row.accepted_answers||[];
+        else { q.a=row.a; q.o=row.options||[]; }
+        DB[row.topic].push(q);
+      });
+      console.log(`[Supabase] Loaded ${data.length} extra questions`);
+    });
+  },[]);
+
   return <Ctx.Provider value={{state,dispatch}}>{children}</Ctx.Provider>;
 }
 
