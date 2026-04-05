@@ -61,7 +61,8 @@ Deno.serve(async (req) => {
 
   const emoji = total === 0 ? "😴" : pct >= 80 ? "🌟" : pct >= 60 ? "👍" : "💪";
 
-  let msg = `📖 סיכום יומי — לייה\n\n`;
+  const dateStr = yesterday.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  let msg = `📖 סיכום יומי — לייה\n📅 ${dateStr}\n\n`;
 
   if (total === 0) {
     msg += `😴 אין פעילות אתמול\n`;
