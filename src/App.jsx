@@ -1683,61 +1683,294 @@ function FeedbackDashboard(){
 }
 
 function ParentSummary(){
-  const[data,setData]=useState(null);
+  const[analytics,setAnalytics]=useState(null);
   const[loading,setLoading]=useState(true);
+
   useEffect(()=>{
     if(!supabase){setLoading(false);return;}
-    const now=new Date();
-    const fmt=d=>d.toLocaleDateString("he-IL",{weekday:"short",day:"numeric",month:"short"});
-    const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-    const yesterdayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
-    const weekStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-7);
-    const ranges=[
-      {label:"היום",date:fmt(now),start:todayStart.toISOString()},
-      {label:"אתמול",date:fmt(yesterdayStart),start:yesterdayStart.toISOString(),end:todayStart.toISOString()},
-      {label:"7 ימים אחרונים",date:`${fmt(weekStart)} – ${fmt(now)}`,start:weekStart.toISOString()},
-    ];
-    Promise.all(ranges.map(async r=>{
-      let q=supabase.from("quiz_results").select("*").gte("created_at",r.start);
-      if(r.end) q=q.lt("created_at",r.end);
-      const{data:rows}=await q;
-      const total=rows?.length||0;
-      const correct=rows?.filter(x=>x.correct)?.length||0;
-      const topics={};
-      rows?.forEach(x=>{if(!topics[x.topic])topics[x.topic]={c:0,t:0};topics[x.topic].t++;if(x.correct)topics[x.topic].c++;});
-      return{label:r.label,date:r.date,total,correct,pct:total?Math.round(correct/total*100):0,topics};
-    })).then(d=>{setData(d);setLoading(false);});
+    supabase.from("quiz_results").select("*").order("created_at",{ascending:true}).then(({data:all})=>{
+      if(!all||!all.length){setAnalytics({empty:true});setLoading(false);return;}
+      const now=new Date();
+      const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+      const weekStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-7);
+
+      // --- BASIC STATS ---
+      const total=all.length, correct=all.filter(r=>r.correct).length;
+      const todayResults=all.filter(r=>new Date(r.created_at)>=todayStart);
+      const weekResults=all.filter(r=>new Date(r.created_at)>=weekStart);
+      const todayTotal=todayResults.length, todayCorrect=todayResults.filter(r=>r.correct).length;
+      const weekTotal=weekResults.length, weekCorrect=weekResults.filter(r=>r.correct).length;
+
+      // --- TOPIC ANALYSIS ---
+      const topicStats={};
+      all.forEach(r=>{
+        if(!topicStats[r.topic]) topicStats[r.topic]={c:0,t:0,times:[],wrong:[]};
+        topicStats[r.topic].t++;
+        if(r.correct) topicStats[r.topic].c++;
+        if(r.answer_time) topicStats[r.topic].times.push(r.answer_time);
+        if(!r.correct) topicStats[r.topic].wrong.push(r.question_id);
+      });
+      const topicList=Object.entries(topicStats).map(([id,s])=>({
+        id, name: ALL_TOPICS.find(t=>t.id===id)?.name||id,
+        emoji: ALL_TOPICS.find(t=>t.id===id)?.emoji||"📖",
+        pct: Math.round(s.c/s.t*100), total:s.t, correct:s.c,
+        avgTime: s.times.length?Math.round(s.times.reduce((a,b)=>a+b,0)/s.times.length):0,
+        wrongCount: s.wrong.length
+      })).sort((a,b)=>a.pct-b.pct);
+
+      // --- WEAK SPOTS (< 60% accuracy) ---
+      const weakTopics=topicList.filter(t=>t.pct<60&&t.total>=2);
+
+      // --- STRONG TOPICS (>= 80%) ---
+      const strongTopics=topicList.filter(t=>t.pct>=80&&t.total>=2);
+
+      // --- SLOW ANSWERS (answer_time > 15s) ---
+      const slowAnswers=all.filter(r=>r.answer_time&&r.answer_time>15);
+      const avgTime=all.filter(r=>r.answer_time).length>0
+        ? Math.round(all.filter(r=>r.answer_time).reduce((a,r)=>a+r.answer_time,0)/all.filter(r=>r.answer_time).length)
+        : 0;
+      const avgTimeCorrect=all.filter(r=>r.answer_time&&r.correct).length>0
+        ? Math.round(all.filter(r=>r.answer_time&&r.correct).reduce((a,r)=>a+r.answer_time,0)/all.filter(r=>r.answer_time&&r.correct).length)
+        : 0;
+      const avgTimeWrong=all.filter(r=>r.answer_time&&!r.correct).length>0
+        ? Math.round(all.filter(r=>r.answer_time&&!r.correct).reduce((a,r)=>a+r.answer_time,0)/all.filter(r=>r.answer_time&&!r.correct).length)
+        : 0;
+
+      // --- DAILY TREND (last 7 days) ---
+      const dailyTrend=[];
+      for(let i=6;i>=0;i--){
+        const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);
+        const dEnd=new Date(d); dEnd.setDate(dEnd.getDate()+1);
+        const dayR=all.filter(r=>{const rd=new Date(r.created_at);return rd>=d&&rd<dEnd;});
+        const dayC=dayR.filter(r=>r.correct).length;
+        dailyTrend.push({
+          day: d.toLocaleDateString("he-IL",{weekday:"short"}),
+          date: d.getDate(),
+          total:dayR.length, correct:dayC,
+          pct: dayR.length?Math.round(dayC/dayR.length*100):null
+        });
+      }
+
+      // --- TIME OF DAY PATTERN ---
+      const hourBuckets={morning:0,afternoon:0,evening:0};
+      all.forEach(r=>{
+        const h=new Date(r.created_at).getHours();
+        if(h>=6&&h<12) hourBuckets.morning++;
+        else if(h>=12&&h<18) hourBuckets.afternoon++;
+        else hourBuckets.evening++;
+      });
+      const peakTime=hourBuckets.morning>=hourBuckets.afternoon&&hourBuckets.morning>=hourBuckets.evening
+        ?"בוקר (6-12)":hourBuckets.afternoon>=hourBuckets.evening?"צהריים (12-18)":"ערב (18+)";
+
+      // --- IMPROVEMENT TREND ---
+      const firstHalf=all.slice(0,Math.floor(all.length/2));
+      const secondHalf=all.slice(Math.floor(all.length/2));
+      const firstPct=firstHalf.length?Math.round(firstHalf.filter(r=>r.correct).length/firstHalf.length*100):0;
+      const secondPct=secondHalf.length?Math.round(secondHalf.filter(r=>r.correct).length/secondHalf.length*100):0;
+      const improving=secondPct>firstPct;
+      const improveDelta=secondPct-firstPct;
+
+      // --- QUESTIONS NEEDING REVIEW ---
+      const wrongQuestions={};
+      all.filter(r=>!r.correct).forEach(r=>{
+        if(!wrongQuestions[r.question_id]) wrongQuestions[r.question_id]={count:0,topic:r.topic,lastTime:r.answer_time};
+        wrongQuestions[r.question_id].count++;
+        wrongQuestions[r.question_id].lastTime=r.answer_time;
+      });
+      const repeatWrong=Object.entries(wrongQuestions).filter(([,v])=>v.count>=2).length;
+
+      // --- PRODUCT INSIGHTS ---
+      const openQuestions=all.filter(r=>r.is_open);
+      const openPct=openQuestions.length?Math.round(openQuestions.filter(r=>r.correct).length/openQuestions.length*100):null;
+      const multiPct=all.filter(r=>!r.is_open).length?Math.round(all.filter(r=>!r.is_open&&r.correct).length/all.filter(r=>!r.is_open).length*100):null;
+      const untouchedTopics=TOPICS.filter(t=>!topicStats[t.id]);
+
+      setAnalytics({
+        total,correct,pct:Math.round(correct/total*100),
+        todayTotal,todayCorrect,todayPct:todayTotal?Math.round(todayCorrect/todayTotal*100):null,
+        weekTotal,weekCorrect,weekPct:weekTotal?Math.round(weekCorrect/weekTotal*100):null,
+        topicList,weakTopics,strongTopics,
+        avgTime,avgTimeCorrect,avgTimeWrong,slowCount:slowAnswers.length,
+        dailyTrend,peakTime,hourBuckets,
+        improving,improveDelta,firstPct,secondPct,
+        repeatWrong,totalWrong:all.filter(r=>!r.correct).length,
+        openPct,multiPct,untouchedTopics,
+      });
+      setLoading(false);
+    });
   },[]);
 
-  const topicName=id=>ALL_TOPICS.find(t=>t.id===id)?.name||id;
+  const Card=({title,emoji,children})=><div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:20,padding:'20px 18px',marginBottom:14}}>
+    <div style={{fontWeight:700,fontSize:18,color:'#fff',marginBottom:12}}>{emoji} {title}</div>
+    {children}
+  </div>;
+
+  const Stat=({label,value,color,sub})=><div style={{textAlign:'center',flex:1}}>
+    <div style={{fontSize:32,fontWeight:800,color:color||'#fff',lineHeight:1}}>{value}</div>
+    <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',marginTop:4}}>{label}</div>
+    {sub&&<div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:2}}>{sub}</div>}
+  </div>;
+
+  const Bar=({pct,color})=><div style={{background:'rgba(255,255,255,0.08)',borderRadius:6,height:8,width:'100%',overflow:'hidden'}}>
+    <div style={{height:'100%',borderRadius:6,width:`${Math.max(pct,3)}%`,background:color||'#FFD700',transition:'width 0.5s'}}/>
+  </div>;
+
   const todayFull=new Date().toLocaleDateString("he-IL",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 
-  if(loading)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>טוען סיכום...</div>;
-  if(!data)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>לא ניתן לטעון</div>;
+  if(loading)return<div style={{textAlign:'center',padding:'80px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>
+    <div style={{fontSize:40,marginBottom:12}}>📊</div>טוען ניתוח מעמיק...</div>;
+  if(!analytics||analytics.empty)return<div style={{textAlign:'center',padding:'80px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>
+    <div style={{fontSize:40,marginBottom:12}}>📭</div>אין נתונים עדיין. לייה צריכה לענות על כמה שאלות קודם!</div>;
 
+  const a=analytics;
   return<div style={{direction:'rtl',padding:'24px 16px',width:'100%',minHeight:'100vh'}}>
-    <div style={{textAlign:'center',marginBottom:28}}>
-      <div style={{fontSize:32,marginBottom:6}}>📊</div>
-      <h2 style={{color:'#FFD700',margin:'0 0 6px',fontSize:26,fontWeight:800}}>סיכום הורים — לייה</h2>
+    {/* HEADER */}
+    <div style={{textAlign:'center',marginBottom:24}}>
+      <h2 style={{color:'#FFD700',margin:'0 0 6px',fontSize:28,fontWeight:800}}>ניתוח למידה — לייה</h2>
       <div style={{color:'rgba(255,255,255,0.5)',fontSize:15}}>{todayFull}</div>
     </div>
-    {data.map((r,i)=><div key={i} style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:20,padding:'20px 18px',marginBottom:14}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-        <div>
-          <div style={{fontWeight:700,fontSize:19,color:'#fff'}}>{r.label}</div>
-          <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>{r.date}</div>
-        </div>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:36,fontWeight:800,color:r.pct>=70?'#5DFC8A':r.pct>=50?'#FFD700':'#FF6B6B',lineHeight:1}}>{r.total>0?`${r.pct}%`:'—'}</div>
-          <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:2}}>דיוק</div>
-        </div>
+
+    {/* HERO STATS */}
+    <Card title="מבט כללי" emoji="🎯">
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        <Stat label="סה״כ שאלות" value={a.total} color="#fff"/>
+        <Stat label="דיוק כללי" value={`${a.pct}%`} color={a.pct>=70?'#5DFC8A':a.pct>=50?'#FFD700':'#FF6B6B'}/>
+        <Stat label="היום" value={a.todayTotal>0?`${a.todayPct}%`:'—'} color={a.todayPct>=70?'#5DFC8A':'#FFD700'} sub={a.todayTotal>0?`${a.todayTotal} שאלות`:'לא למדה'}/>
       </div>
-      {r.total>0&&<div style={{fontSize:16,color:'rgba(255,255,255,0.75)',marginBottom:10}}>{r.correct} מתוך {r.total} תשובות נכונות</div>}
-      {Object.keys(r.topics).length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-        {Object.entries(r.topics).map(([tid,s])=><span key={tid} style={{background:s.c/s.t>=0.7?'rgba(93,252,138,0.12)':'rgba(255,215,0,0.12)',border:'1px solid '+(s.c/s.t>=0.7?'rgba(93,252,138,0.3)':'rgba(255,215,0,0.3)'),borderRadius:12,padding:'6px 14px',fontSize:14,color:s.c/s.t>=0.7?'#5DFC8A':'#FFD700',fontWeight:600}}>{topicName(tid)} {s.c}/{s.t}</span>)}
+      <div style={{display:'flex',gap:8}}>
+        <Stat label="זמן ממוצע" value={`${a.avgTime}ש׳`} color="#45B7D1"/>
+        <Stat label="נכון" value={`${a.avgTimeCorrect}ש׳`} color="#5DFC8A" sub="ממוצע"/>
+        <Stat label="שגוי" value={`${a.avgTimeWrong}ש׳`} color="#FF6B6B" sub="ממוצע"/>
+      </div>
+    </Card>
+
+    {/* TREND */}
+    <Card title="מגמה שבועית" emoji={a.improving?"📈":"📉"}>
+      <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80,marginBottom:12}}>
+        {a.dailyTrend.map((d,i)=><div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+          <div style={{fontSize:11,color:d.pct!==null?(d.pct>=70?'#5DFC8A':d.pct>=50?'#FFD700':'#FF6B6B'):'rgba(255,255,255,0.2)',fontWeight:700}}>{d.pct!==null?`${d.pct}%`:''}</div>
+          <div style={{width:'100%',maxWidth:32,borderRadius:6,background:d.total>0?(d.pct>=70?'rgba(93,252,138,0.5)':d.pct>=50?'rgba(255,215,0,0.5)':'rgba(255,107,107,0.5)'):'rgba(255,255,255,0.06)',height:d.total>0?Math.max(d.total*8,12):4}}/>
+          <div style={{fontSize:11,color:'rgba(255,255,255,0.4)'}}>{d.day}</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,0.25)'}}>{d.total>0?d.total:''}</div>
+        </div>)}
+      </div>
+      <div style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+        {a.improving
+          ?<span style={{color:'#5DFC8A'}}>מגמת שיפור! מ-{a.firstPct}% ל-{a.secondPct}% (+{a.improveDelta})</span>
+          :a.improveDelta===0?<span>ביצועים יציבים ({a.secondPct}%)</span>
+          :<span style={{color:'#FFD700'}}>ירידה קלה: מ-{a.firstPct}% ל-{a.secondPct}% ({a.improveDelta}). מומלץ לחזור על נושאים חלשים</span>}
+      </div>
+    </Card>
+
+    {/* TOPIC BREAKDOWN */}
+    <Card title="ניתוח לפי נושא" emoji="📚">
+      {a.topicList.map(t=><div key={t.id} style={{marginBottom:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <span style={{fontSize:15,fontWeight:600,color:'#fff'}}>{t.emoji} {t.name}</span>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{t.avgTime}ש׳</span>
+            <span style={{fontSize:16,fontWeight:700,color:t.pct>=70?'#5DFC8A':t.pct>=50?'#FFD700':'#FF6B6B'}}>{t.pct}%</span>
+            <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{t.correct}/{t.total}</span>
+          </div>
+        </div>
+        <Bar pct={t.pct} color={t.pct>=70?'#5DFC8A':t.pct>=50?'#FFD700':'#FF6B6B'}/>
+      </div>)}
+    </Card>
+
+    {/* WEAK SPOTS */}
+    {a.weakTopics.length>0&&<Card title="צריך חיזוק" emoji="🔴">
+      <div style={{fontSize:14,color:'rgba(255,255,255,0.6)',marginBottom:12}}>נושאים עם פחות מ-60% דיוק — מומלץ לחזור עליהם</div>
+      {a.weakTopics.map(t=><div key={t.id} style={{background:'rgba(255,107,107,0.08)',border:'1px solid rgba(255,107,107,0.2)',borderRadius:14,padding:'12px 14px',marginBottom:8}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:16,fontWeight:700,color:'#FF6B6B'}}>{t.emoji} {t.name}</span>
+          <span style={{fontSize:20,fontWeight:800,color:'#FF6B6B'}}>{t.pct}%</span>
+        </div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.45)',marginTop:4}}>{t.wrongCount} שגיאות | זמן ממוצע: {t.avgTime} שניות | {t.total} שאלות</div>
+      </div>)}
+    </Card>}
+
+    {/* STRONG TOPICS */}
+    {a.strongTopics.length>0&&<Card title="כוכבות" emoji="🌟">
+      <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {a.strongTopics.map(t=><span key={t.id} style={{background:'rgba(93,252,138,0.1)',border:'1px solid rgba(93,252,138,0.3)',borderRadius:14,padding:'8px 16px',fontSize:15,color:'#5DFC8A',fontWeight:700}}>{t.emoji} {t.name} {t.pct}%</span>)}
+      </div>
+    </Card>}
+
+    {/* SPEED ANALYSIS */}
+    <Card title="ניתוח מהירות" emoji="⏱️">
+      <div style={{display:'flex',gap:8,marginBottom:12}}>
+        <Stat label="זמן ממוצע" value={`${a.avgTime}ש׳`} color="#45B7D1"/>
+        <Stat label="תשובות איטיות" value={a.slowCount} color={a.slowCount>5?'#FF6B6B':'#FFD700'} sub="מעל 15 שניות"/>
+      </div>
+      <div style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.6)'}}>
+        {a.avgTimeWrong>a.avgTimeCorrect*1.5
+          ?`תשובות שגויות לוקחות הרבה יותר זמן (${a.avgTimeWrong}ש׳ vs ${a.avgTimeCorrect}ש׳) — כשלייה מהססת, היא לרוב טועה. מומלץ לעודד תשובות מהירות יותר.`
+          :`הפרש הזמנים בין נכון לשגוי קטן (${a.avgTimeCorrect}ש׳ vs ${a.avgTimeWrong}ש׳) — לייה עקבית בקצב.`}
+      </div>
+    </Card>
+
+    {/* LEARNING HABITS */}
+    <Card title="הרגלי למידה" emoji="🕐">
+      <div style={{fontSize:15,color:'rgba(255,255,255,0.7)',marginBottom:8}}>שעת שיא: <strong style={{color:'#FFD700'}}>{a.peakTime}</strong></div>
+      <div style={{display:'flex',gap:6}}>
+        {[{label:"בוקר",val:a.hourBuckets.morning,emoji:"🌅"},{label:"צהריים",val:a.hourBuckets.afternoon,emoji:"☀️"},{label:"ערב",val:a.hourBuckets.evening,emoji:"🌙"}].map(h=>
+          <div key={h.label} style={{flex:1,background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 8px',textAlign:'center'}}>
+            <div style={{fontSize:20}}>{h.emoji}</div>
+            <div style={{fontSize:20,fontWeight:700,color:'#fff'}}>{h.val}</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>{h.label}</div>
+          </div>)}
+      </div>
+    </Card>
+
+    {/* REVIEW NEEDED */}
+    {a.repeatWrong>0&&<Card title="שאלות לחזרה" emoji="🔄">
+      <div style={{fontSize:15,color:'rgba(255,255,255,0.7)'}}>
+        <strong style={{color:'#FF6B6B'}}>{a.repeatWrong}</strong> שאלות שלייה טעתה בהן יותר מפעם אחת.
+        <br/>מומלץ להפעיל מצב חזרה (Review) כדי לחזק את הנקודות האלו.
+      </div>
+    </Card>}
+
+    {/* QUESTION TYPES */}
+    {(a.openPct!==null||a.multiPct!==null)&&<Card title="סוגי שאלות" emoji="📝">
+      <div style={{display:'flex',gap:8}}>
+        {a.multiPct!==null&&<Stat label="רב-ברירה" value={`${a.multiPct}%`} color={a.multiPct>=70?'#5DFC8A':'#FFD700'}/>}
+        {a.openPct!==null&&<Stat label="שאלות פתוחות" value={`${a.openPct}%`} color={a.openPct>=70?'#5DFC8A':'#FFD700'}/>}
+      </div>
+      {a.openPct!==null&&a.multiPct!==null&&<div style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.6)',marginTop:10}}>
+        {a.openPct<a.multiPct-15
+          ?`שאלות פתוחות קשות יותר ללייה (${a.openPct}% vs ${a.multiPct}%). זה נורמלי — שאלות פתוחות דורשות ידע מדויק יותר.`
+          :`ביצועים דומים בשני הסוגים — לייה שולטת בחומר!`}
       </div>}
-      {r.total===0&&<div style={{fontSize:15,color:'rgba(255,255,255,0.35)',textAlign:'center',padding:'8px 0'}}>😴 אין פעילות</div>}
-    </div>)}
+    </Card>}
+
+    {/* UNTOUCHED TOPICS */}
+    {a.untouchedTopics.length>0&&<Card title="ספרים שעוד לא נלמדו" emoji="📖">
+      <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {a.untouchedTopics.map(t=><span key={t.id} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:14,padding:'8px 16px',fontSize:14,color:'rgba(255,255,255,0.5)'}}>{t.emoji} {t.name}</span>)}
+      </div>
+      <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:8}}>{a.untouchedTopics.length} ספרים חדשים מחכים!</div>
+    </Card>}
+
+    {/* PRODUCT SUGGESTIONS */}
+    <Card title="המלצות" emoji="💡">
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {a.weakTopics.length>0&&<div style={{background:'rgba(255,107,107,0.06)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+          🔴 <strong>חזרה על נושאים חלשים:</strong> {a.weakTopics.map(t=>t.name).join(", ")} — מומלץ להתמקד בהם השבוע
+        </div>}
+        {a.slowCount>3&&<div style={{background:'rgba(255,215,0,0.06)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+          ⏱️ <strong>תרגול מהירות:</strong> {a.slowCount} תשובות איטיות. אפשר לנסות מצב בחינה (Exam) עם טיימר
+        </div>}
+        {a.untouchedTopics.length>3&&<div style={{background:'rgba(78,205,196,0.06)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+          📖 <strong>הרחבה:</strong> עוד {a.untouchedTopics.length} ספרים לא נלמדו — אפשר להתחיל עם {a.untouchedTopics[0]?.name}
+        </div>}
+        {a.improving&&<div style={{background:'rgba(93,252,138,0.06)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+          📈 <strong>מגמה חיובית!</strong> לייה משתפרת — מ-{a.firstPct}% ל-{a.secondPct}%. יופי!
+        </div>}
+        {a.todayTotal===0&&<div style={{background:'rgba(255,255,255,0.05)',borderRadius:12,padding:'10px 14px',fontSize:14,color:'rgba(255,255,255,0.7)'}}>
+          😴 <strong>היום עוד לא למדה.</strong> תזכורת קטנה יכולה לעזור!
+        </div>}
+      </div>
+    </Card>
   </div>;
 }
 
