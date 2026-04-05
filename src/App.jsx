@@ -21,30 +21,6 @@ import {
 // ─────────────────────────────────────────────
 // [1] CONSTANTS
 // ─────────────────────────────────────────────
-
-// ─── SUPABASE ──────────────────────────────────
-import { createClient } from '@supabase/supabase-js';
-const SUPA_URL = "https://mibqnkhvbgoavwamhmnp.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA";
-const supabase = SUPA_URL && SUPA_KEY ? createClient(SUPA_URL, SUPA_KEY) : null;
-
-async function syncToCloud(state) {
-  if (!supabase) return;
-  try {
-    const p = {}; 
-    ["name","streak","lastDay","total","correct","openCorrect","topics","cards","unlocked","dailyDone","lastPerfect","lastDaily"].forEach(k=>p[k]=state[k]);
-    await supabase.from('progress').upsert({ id: 'leya', data: p, updated_at: new Date().toISOString() });
-  } catch(e) {}
-}
-
-async function loadFromCloud() {
-  if (!supabase) return null;
-  try {
-    const { data } = await supabase.from('progress').select('data').eq('id','leya').single();
-    return data?.data || null;
-  } catch(e) { return null; }
-}
-
 const APP_VERSION    = "4.0.0";
 const STORAGE_KEY    = "leya_v4";
 const STUDENT_NAME   = "לייה";
@@ -474,7 +450,7 @@ const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAn
 
 function load() {
   try { const r=localStorage.getItem(STORAGE_KEY); return r?{...INIT,...JSON.parse(r),session:null}:INIT; }
-  catch(e) { return INIT; }
+  catch { return INIT; }
 }
 function save(s) {
   try { const p={}; PKEYS.forEach(k=>p[k]=s[k]); localStorage.setItem(STORAGE_KEY,JSON.stringify(p)); } catch(e) {}
@@ -548,20 +524,8 @@ const useS = ()=>useContext(Ctx);
 
 function Store({children}) {
   const [state,dispatch] = useReducer(reducer,null,load);
-  useEffect(()=>{ save(state); syncToCloud(state); },[state]);
-  useEffect(()=>{
-    dispatch({type:"STREAK"});
-    loadFromCloud().then(cloud => {
-      if (cloud && cloud.total > 0) {
-        const local = load();
-        if (!local || cloud.correct >= (local.correct||0)) {
-          Object.keys(cloud).forEach(k => {
-            if (k !== 'session') dispatch({type:'HYDRATE', key:k, value:cloud[k]});
-          });
-        }
-      }
-    });
-  },[]);
+  useEffect(()=>save(state),[state]);
+  useEffect(()=>dispatch({type:"STREAK"}),[]);
   return <Ctx.Provider value={{state,dispatch}}>{children}</Ctx.Provider>;
 }
 
@@ -624,7 +588,7 @@ ${context ? `הקשר: ${context}` : ""}
 שאלת הילדה: "${userMessage}"
 ענה בעברית פשוטה, קצר (2-4 משפטים), חם ומעניין. אל תסביר יותר מדי.`;
   try { return await callClaude(prompt,400); }
-  catch(e) { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
+  catch { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
 }
 
 // Audio/Haptic
