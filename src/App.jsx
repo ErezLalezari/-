@@ -583,8 +583,6 @@ function reducer(state, action) {
         if (!topics[tid]) topics[tid]={correct:0,total:0};
         topics[tid]={correct:topics[tid].correct+(correct?1:0),total:topics[tid].total+1};
       }
-      // Log to Supabase for parent summary
-      if(supabase){supabase.from("quiz_results").insert({question_id:qid,topic:tid||"mixed",correct,is_open:isOpen,answer_time:answerTime}).then(()=>{});}
       const newTotal=state.total+1, newCorrect=state.correct+(correct?1:0);
       const newOpenCorrect=state.openCorrect+(isOpen&&correct?1:0);
       const snap={...state,total:newTotal,correct:newCorrect,topics,openCorrect:newOpenCorrect,fastAnswers:state.fastAnswers+(correct&&answerTime<=EXAM_SECS?1:0)};
@@ -652,6 +650,13 @@ function Store({children}) {
 // ─────────────────────────────────────────────
 
 // Online status
+function logQuizResult(qid, topic, correct, isOpen, answerTime) {
+  if (!supabase) return;
+  supabase.from("quiz_results").insert({
+    question_id: qid, topic: topic || "mixed", correct, is_open: isOpen, answer_time: answerTime
+  }).then(({error}) => { if (error) console.warn("[quiz_results]", error.message); });
+}
+
 function useOnline() {
   const [on,setOn] = useState(()=>navigator.onLine);
   useEffect(()=>{
@@ -1075,6 +1080,7 @@ function DailyChallenge({nav}) {
     else{Audio.wrong();Audio.vWrong();}
     dispatch({type:"DAILY_DONE"});
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:false});
+    logQuizResult(q.id, q.topic||"daily", ok, false, 0);
     setLoading(true);
     const e=await explainAnswer({q:qShuffled,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>ok?`✅ ${q.exp}`:`💡 ${q.a}. ${q.exp}`);
     setExpl(e||"");setLoading(false);
@@ -1360,6 +1366,7 @@ function Quiz({nav,params,online}) {
     setSel(timeout?"⏰ פג הזמן":opt);
     if(!isMulti)setOpenOk(ok);
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:!isMulti,answerTime:at});
+    logQuizResult(q.id, state.session?.topic?.id, ok, !isMulti, at);
     if(ok){Audio.correct();Audio.vCorrect();doFlash("green");burst();}
     else{Audio.wrong();Audio.vWrong();doFlash("red");}
     const ca=isMulti?q.a:(q.acceptedAnswers||[])[0]||"";
@@ -1681,10 +1688,14 @@ function ParentSummary(){
   useEffect(()=>{
     if(!supabase){setLoading(false);return;}
     const now=new Date();
+    const fmt=d=>d.toLocaleDateString("he-IL",{weekday:"short",day:"numeric",month:"short"});
+    const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const yesterdayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+    const weekStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-7);
     const ranges=[
-      {label:"היום",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString()},
-      {label:"אתמול",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()-1).toISOString(),end:new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString()},
-      {label:"השבוע",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()-7).toISOString()},
+      {label:"היום",date:fmt(now),start:todayStart.toISOString()},
+      {label:"אתמול",date:fmt(yesterdayStart),start:yesterdayStart.toISOString(),end:todayStart.toISOString()},
+      {label:"7 ימים אחרונים",date:`${fmt(weekStart)} – ${fmt(now)}`,start:weekStart.toISOString()},
     ];
     Promise.all(ranges.map(async r=>{
       let q=supabase.from("quiz_results").select("*").gte("created_at",r.start);
@@ -1694,27 +1705,38 @@ function ParentSummary(){
       const correct=rows?.filter(x=>x.correct)?.length||0;
       const topics={};
       rows?.forEach(x=>{if(!topics[x.topic])topics[x.topic]={c:0,t:0};topics[x.topic].t++;if(x.correct)topics[x.topic].c++;});
-      return{label:r.label,total,correct,pct:total?Math.round(correct/total*100):0,topics};
+      return{label:r.label,date:r.date,total,correct,pct:total?Math.round(correct/total*100):0,topics};
     })).then(d=>{setData(d);setLoading(false);});
   },[]);
 
   const topicName=id=>ALL_TOPICS.find(t=>t.id===id)?.name||id;
+  const todayFull=new Date().toLocaleDateString("he-IL",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 
-  if(loading)return<div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.5)'}}>טוען סיכום...</div>;
-  if(!data)return<div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.5)'}}>לא ניתן לטעון</div>;
+  if(loading)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>טוען סיכום...</div>;
+  if(!data)return<div style={{textAlign:'center',padding:'60px 20px',color:'rgba(255,255,255,0.5)',fontSize:18}}>לא ניתן לטעון</div>;
 
-  return<div style={{direction:'rtl',padding:'16px 0'}}>
-    <h2 style={{textAlign:'center',color:'#FFD700',margin:'0 0 20px',fontSize:22}}>📊 סיכום הורים — לייה</h2>
-    {data.map((r,i)=><div key={i} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:18,padding:16,marginBottom:12}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <span style={{fontWeight:700,fontSize:16,color:'#fff'}}>{r.label}</span>
-        <span style={{fontSize:28,fontWeight:800,color:r.pct>=70?'#5DFC8A':r.pct>=50?'#FFD700':'#FF6B6B'}}>{r.pct}%</span>
+  return<div style={{direction:'rtl',padding:'20px 4px',maxWidth:600,margin:'0 auto',width:'100%'}}>
+    <div style={{textAlign:'center',marginBottom:28}}>
+      <div style={{fontSize:32,marginBottom:6}}>📊</div>
+      <h2 style={{color:'#FFD700',margin:'0 0 6px',fontSize:26,fontWeight:800}}>סיכום הורים — לייה</h2>
+      <div style={{color:'rgba(255,255,255,0.5)',fontSize:15}}>{todayFull}</div>
+    </div>
+    {data.map((r,i)=><div key={i} style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:20,padding:'20px 18px',marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:19,color:'#fff'}}>{r.label}</div>
+          <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',marginTop:2}}>{r.date}</div>
+        </div>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:36,fontWeight:800,color:r.pct>=70?'#5DFC8A':r.pct>=50?'#FFD700':'#FF6B6B',lineHeight:1}}>{r.total>0?`${r.pct}%`:'—'}</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',marginTop:2}}>דיוק</div>
+        </div>
       </div>
-      <div style={{fontSize:14,color:'rgba(255,255,255,0.7)',marginBottom:8}}>{r.correct}/{r.total} תשובות נכונות</div>
-      {Object.keys(r.topics).length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-        {Object.entries(r.topics).map(([tid,s])=><span key={tid} style={{background:'rgba(255,255,255,0.08)',borderRadius:10,padding:'4px 10px',fontSize:12,color:s.c/s.t>=0.7?'#5DFC8A':'#FFD700'}}>{topicName(tid)} {s.c}/{s.t}</span>)}
+      {r.total>0&&<div style={{fontSize:16,color:'rgba(255,255,255,0.75)',marginBottom:10}}>{r.correct} מתוך {r.total} תשובות נכונות</div>}
+      {Object.keys(r.topics).length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {Object.entries(r.topics).map(([tid,s])=><span key={tid} style={{background:s.c/s.t>=0.7?'rgba(93,252,138,0.12)':'rgba(255,215,0,0.12)',border:'1px solid '+(s.c/s.t>=0.7?'rgba(93,252,138,0.3)':'rgba(255,215,0,0.3)'),borderRadius:12,padding:'6px 14px',fontSize:14,color:s.c/s.t>=0.7?'#5DFC8A':'#FFD700',fontWeight:600}}>{topicName(tid)} {s.c}/{s.t}</span>)}
       </div>}
-      {r.total===0&&<div style={{fontSize:13,color:'rgba(255,255,255,0.4)'}}>אין פעילות</div>}
+      {r.total===0&&<div style={{fontSize:15,color:'rgba(255,255,255,0.35)',textAlign:'center',padding:'8px 0'}}>😴 אין פעילות</div>}
     </div>)}
   </div>;
 }
