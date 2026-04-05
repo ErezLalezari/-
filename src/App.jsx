@@ -583,6 +583,8 @@ function reducer(state, action) {
         if (!topics[tid]) topics[tid]={correct:0,total:0};
         topics[tid]={correct:topics[tid].correct+(correct?1:0),total:topics[tid].total+1};
       }
+      // Log to Supabase for parent summary
+      if(supabase){supabase.from("quiz_results").insert({question_id:qid,topic:tid||"mixed",correct,is_open:isOpen,answer_time:answerTime}).then(()=>{});}
       const newTotal=state.total+1, newCorrect=state.correct+(correct?1:0);
       const newOpenCorrect=state.openCorrect+(isOpen&&correct?1:0);
       const snap={...state,total:newTotal,correct:newCorrect,topics,openCorrect:newOpenCorrect,fastAnswers:state.fastAnswers+(correct&&answerTime<=EXAM_SECS?1:0)};
@@ -1673,16 +1675,61 @@ function FeedbackDashboard(){
   </div>)}</div>;
 }
 
+function ParentSummary(){
+  const[data,setData]=useState(null);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{
+    if(!supabase){setLoading(false);return;}
+    const now=new Date();
+    const ranges=[
+      {label:"היום",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString()},
+      {label:"אתמול",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()-1).toISOString(),end:new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString()},
+      {label:"השבוע",start:new Date(now.getFullYear(),now.getMonth(),now.getDate()-7).toISOString()},
+    ];
+    Promise.all(ranges.map(async r=>{
+      let q=supabase.from("quiz_results").select("*").gte("created_at",r.start);
+      if(r.end) q=q.lt("created_at",r.end);
+      const{data:rows}=await q;
+      const total=rows?.length||0;
+      const correct=rows?.filter(x=>x.correct)?.length||0;
+      const topics={};
+      rows?.forEach(x=>{if(!topics[x.topic])topics[x.topic]={c:0,t:0};topics[x.topic].t++;if(x.correct)topics[x.topic].c++;});
+      return{label:r.label,total,correct,pct:total?Math.round(correct/total*100):0,topics};
+    })).then(d=>{setData(d);setLoading(false);});
+  },[]);
+
+  const topicName=id=>ALL_TOPICS.find(t=>t.id===id)?.name||id;
+
+  if(loading)return<div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.5)'}}>טוען סיכום...</div>;
+  if(!data)return<div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.5)'}}>לא ניתן לטעון</div>;
+
+  return<div style={{direction:'rtl',padding:'16px 0'}}>
+    <h2 style={{textAlign:'center',color:'#FFD700',margin:'0 0 20px',fontSize:22}}>📊 סיכום הורים — לייה</h2>
+    {data.map((r,i)=><div key={i} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:18,padding:16,marginBottom:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <span style={{fontWeight:700,fontSize:16,color:'#fff'}}>{r.label}</span>
+        <span style={{fontSize:28,fontWeight:800,color:r.pct>=70?'#5DFC8A':r.pct>=50?'#FFD700':'#FF6B6B'}}>{r.pct}%</span>
+      </div>
+      <div style={{fontSize:14,color:'rgba(255,255,255,0.7)',marginBottom:8}}>{r.correct}/{r.total} תשובות נכונות</div>
+      {Object.keys(r.topics).length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+        {Object.entries(r.topics).map(([tid,s])=><span key={tid} style={{background:'rgba(255,255,255,0.08)',borderRadius:10,padding:'4px 10px',fontSize:12,color:s.c/s.t>=0.7?'#5DFC8A':'#FFD700'}}>{topicName(tid)} {s.c}/{s.t}</span>)}
+      </div>}
+      {r.total===0&&<div style={{fontSize:13,color:'rgba(255,255,255,0.4)'}}>אין פעילות</div>}
+    </div>)}
+  </div>;
+}
+
 const SCREENS = {
   home:Home, intro:BookIntro, quiz:Quiz, result:Result,
   daily:DailyChallenge, aigen:AIGenerator, tutor:Tutor,
   map:VisualMap, stats:Stats, achievements:Achievements,
-  glossary:Glossary, parent:Parent,
+  glossary:Glossary, parent:Parent, summary:ParentSummary,
 };
 
 function Router() {
   const [splash,setSplash]=useState(()=>!sessionStorage.getItem("v4"));
-  const [route,setRoute]=useState({screen:"home",params:{}});
+  const initScreen=new URLSearchParams(window.location.search).get("screen")||"home";
+  const [route,setRoute]=useState({screen:initScreen,params:{}});
   const online=useOnline();
 
   const nav=useCallback((screen,params={})=>{
