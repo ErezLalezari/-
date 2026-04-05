@@ -17,6 +17,15 @@ import {
   useState, useEffect, useCallback, useReducer,
   createContext, useContext, useRef, useMemo
 } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// ─────────────────────────────────────────────
+// SUPABASE CLIENT
+// ─────────────────────────────────────────────
+const supabase = createClient(
+  "https://mibqnkhvbgoavwamhmnp.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"
+);
 
 // ─────────────────────────────────────────────
 // [1] CONSTANTS
