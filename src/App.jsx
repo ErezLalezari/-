@@ -692,6 +692,30 @@ async function callClaude(prompt, maxTokens=400) {
   return d.content?.[0]?.text||"";
 }
 
+// Personal Helper — clarify a question or word
+async function askHelper(question, context) {
+  const prompt = `את העוזרת האישית של לייה, ילדה בת 10 שלומדת תנ"ך.
+היא שואלת: "${question}"
+ההקשר: שאלת החידון היא "${context}"
+ענה בעברית פשוטה, 2-3 משפטים קצרים. אל תגלה את התשובה! רק עזור להבין את השאלה.`;
+  try { return await callClaude(prompt,200); } catch(e) { return "לא הצלחתי לעזור כרגע, נסי שוב"; }
+}
+
+// Generate variation of a question (for review mode)
+async function generateVariation(originalQ, topicName) {
+  const prompt = `שאלת תנ"ך מקורית: "${originalQ.q}" (תשובה: "${originalQ.a||originalQ.acceptedAnswers?.[0]||""}")
+נושא: ${topicName}
+צור ווריאציה חדשה של אותה שאלה — אותו נושא, ניסוח שונה, אפשרויות שונות.
+לילדה בת 10. פורמט JSON בלבד:
+{"q":"שאלה חדשה","a":"תשובה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז","exp":"הסבר"}`;
+  try {
+    const raw = await callClaude(prompt,300);
+    const parsed = JSON.parse(raw.replace(/```json|```/g,"").trim());
+    if (!parsed.q||!parsed.a||!parsed.o) return null;
+    return {id:`var_${Date.now()}`,type:Q.MULTIPLE,...parsed,isVariation:true};
+  } catch(e) { return null; }
+}
+
 // Explain answer (short)
 async function explainAnswer({q,correct,userAnswer,isCorrect,isOpen}) {
   const ca = q.type===Q.MULTIPLE ? q.a : (q.acceptedAnswers||[])[0]||"";
@@ -992,6 +1016,21 @@ function Home({nav}) {
         <Btn v="purple" onClick={()=>{dispatch({type:"START",topic:null,mode:MODE.REVIEW});nav("quiz",{mode:MODE.REVIEW});}} style={{width:"auto",marginBottom:0,padding:"8px 16px",fontSize:14}}>התחילי ▶</Btn>
       </div>
     </Card>}
+
+    {/* Game Modes */}
+    <Card style={{padding:T.p.md,borderColor:"rgba(0,201,255,0.25)"}}>
+      <div style={{fontWeight:700,fontSize:15,marginBottom:10}}>🎮 משחקי למידה</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <button onClick={()=>nav("fillblank")} style={{background:"linear-gradient(135deg,rgba(78,205,196,0.1),rgba(69,183,209,0.1))",border:"1px solid rgba(78,205,196,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:24}}>📝</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#4ECDC4"}}>השלם את המשפט</div>
+        </button>
+        <button onClick={()=>nav("scramble")} style={{background:"linear-gradient(135deg,rgba(195,166,255,0.1),rgba(155,89,182,0.1))",border:"1px solid rgba(195,166,255,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:24}}>🔤</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#C3A6FF"}}>תפזורת מילים</div>
+        </button>
+      </div>
+    </Card>
 
     {/* Visual Map */}
     <Btn v="ghost" onClick={()=>nav("map")} style={{marginBottom:10,background:"rgba(255,215,0,0.07)",borderColor:`${T.gold}33`,color:T.gold}}>
@@ -1375,13 +1414,32 @@ function Quiz({nav,params,online}) {
   const [timeLeft,setTimeLeft]=useState(EXAM_SECS);
   const [startTime,setStartTime]=useState(()=>Date.now());
   const timerRef=useRef(null);
+  // Helper & clarification
+  const [helperOpen,setHelperOpen]=useState(false);
+  const [helperQ,setHelperQ]=useState("");
+  const [helperA,setHelperA]=useState("");
+  const [helperLoading,setHelperLoading]=useState(false);
 
   const topic=params?.topic;
   const mode=params?.mode||MODE.NORMAL;
   const isExam=mode===MODE.EXAM;
+  const isReview=mode===MODE.REVIEW;
   const session=state.session;
 
   useEffect(()=>{ dispatch({type:"START",topic,mode}); },[]);
+
+  // For review mode: try to generate AI variations in background
+  useEffect(()=>{
+    if(!isReview||!session||!online) return;
+    session.queue.forEach(async(q,i)=>{
+      if(i<=session.idx) return; // skip already answered
+      const topicName=ALL_TOPICS.find(t=>DB[t.id]?.some(x=>x.id===q.id))?.name||"תנ\"ך";
+      const variation=await generateVariation(q,topicName);
+      if(variation&&session.queue[i]){
+        session.queue[i]={...variation,_originalId:q.id,hint:variation.hint||q.hint,exp:variation.exp||q.exp};
+      }
+    });
+  },[isReview,session?.queue?.length]);
 
   useEffect(()=>{
     if(!isExam||!session)return;
@@ -1440,7 +1498,7 @@ function Quiz({nav,params,online}) {
     clearInterval(timerRef.current);Audio.stop();Audio.tap();
     if(isLast){if(session.correct===session.total)Audio.fanfare();dispatch({type:"END"});nav("result");return;}
     dispatch({type:"NEXT"});
-    setSel(null);setOpenOk(null);setExpl("");setHint(false);
+    setSel(null);setOpenOk(null);setExpl("");setHint(false);setHelperOpen(false);setHelperQ("");setHelperA("");
     setTimeLeft(EXAM_SECS);setStartTime(Date.now());
   };
 
@@ -1479,12 +1537,22 @@ function Quiz({nav,params,online}) {
       {q.imageUrl?<img src={q.imageUrl} alt="" style={{width:"100%",maxHeight:200,objectFit:"contain",borderRadius:T.r.sm,marginBottom:12,background:"rgba(255,255,255,0.05)"}}/>
         :<div style={{fontSize:42,marginBottom:10}}>{mode===MODE.EXAM?"🎓":topic?.emoji||"📖"}</div>}
       <h2 style={{fontSize:24,fontWeight:800,lineHeight:1.7,margin:0}}>{q.q}</h2>
-      {!isExam&&<div style={{display:"flex",justifyContent:"center",gap:8,marginTop:12,flexWrap:"wrap"}}>
-        {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:T.muted,cursor:"pointer",fontSize:12}}>{hint?"🙈 הסתר":"💡 רמז"}</button>}
-        <button onClick={()=>{ if(speaking){Audio.stop();setSpeaking(false);}else{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);}}} style={{background:speaking?`${T.gold}20`:"none",border:`1px solid ${speaking?T.gold:T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:speaking?T.gold:T.muted,cursor:"pointer",fontSize:12}}>{speaking?"🔊":"🔈"}</button>
+      {!isExam&&<div style={{display:"flex",justifyContent:"center",gap:8,marginTop:14,flexWrap:"wrap"}}>
+        {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:T.muted,cursor:"pointer",fontSize:13}}>{hint?"🙈 הסתר":"💡 רמז"}</button>}
+        {!answered&&online&&<button onClick={()=>setHelperOpen(h=>!h)} style={{background:helperOpen?"rgba(0,201,255,0.1)":"none",border:`1px solid ${helperOpen?"#00C9FF":T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:helperOpen?"#00C9FF":T.muted,cursor:"pointer",fontSize:13}}>🤖 עוזר אישי</button>}
+        <button onClick={()=>{ if(speaking){Audio.stop();setSpeaking(false);}else{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);}}} style={{background:speaking?`${T.gold}20`:"none",border:`1px solid ${speaking?T.gold:T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:speaking?T.gold:T.muted,cursor:"pointer",fontSize:13}}>{speaking?"🔊":"🔈"}</button>
       </div>}
-      {hint&&!isExam&&<div style={{marginTop:10,padding:"8px 14px",background:`${T.gold}16`,borderRadius:T.r.sm,color:T.gold,fontSize:13}}>💡 {q.hint}</div>}
+      {hint&&!isExam&&<div style={{marginTop:10,padding:"10px 16px",background:`${T.gold}16`,borderRadius:T.r.sm,color:T.gold,fontSize:14,lineHeight:1.6}}>💡 {q.hint}</div>}
+      {helperOpen&&!answered&&<div style={{marginTop:10,background:"rgba(0,201,255,0.06)",border:"1px solid rgba(0,201,255,0.2)",borderRadius:T.r.sm,padding:14}}>
+        <div style={{fontSize:13,color:"#00C9FF",fontWeight:700,marginBottom:8}}>🤖 העוזר האישי של לייה</div>
+        <div style={{display:"flex",gap:8}}>
+          <input value={helperQ} onChange={e=>setHelperQ(e.target.value)} placeholder="מה לא ברור? שאלי..." dir="rtl" style={{flex:1,padding:"10px 12px",background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.xs,color:"#fff",fontSize:14,outline:"none"}}/>
+          <button onClick={async()=>{if(!helperQ.trim())return;setHelperLoading(true);const a=await askHelper(helperQ,q.q);setHelperA(a);setHelperLoading(false);}} disabled={helperLoading} style={{background:"linear-gradient(135deg,#00C9FF,#92FE9D)",border:"none",borderRadius:T.r.xs,padding:"10px 16px",color:"#000",fontWeight:700,cursor:"pointer",fontSize:13}}>{helperLoading?"...":"שאל"}</button>
+        </div>
+        {helperA&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(255,255,255,0.05)",borderRadius:T.r.xs,fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)"}}>{helperA}</div>}
+      </div>}
       {q.isAI&&<div style={{marginTop:8,fontSize:10,color:"#00C9FF",opacity:0.7}}>✨ שאלה שנוצרה ע"י AI</div>}
+      {q.isVariation&&<div style={{marginTop:8,fontSize:10,color:"#C3A6FF",opacity:0.7}}>🔄 ווריאציה חדשה</div>}
     </Card>
 
     {/* Options */}
@@ -1495,10 +1563,17 @@ function Quiz({nav,params,online}) {
     {answered&&<Card glow color={isCorrect?T.success:T.danger} style={{borderColor:isCorrect?`${T.success}44`:`${T.danger}44`}}>
       <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>{isCorrect?"🌟":"💪"}</div>
       {loadExpl?<div style={{textAlign:"center",color:T.muted,animation:"pulse 1.2s infinite"}}>✨ מסביר...</div>
-        :<div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-          <p style={{margin:0,lineHeight:1.8,fontSize:14,textAlign:"right",flex:1}}>{expl}</p>
-          {!isExam&&<button onClick={()=>Audio.speak(expl,{rate:0.85})} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 8px",color:T.muted,cursor:"pointer",fontSize:15,flexShrink:0}}>🔈</button>}
-        </div>}
+        :<>
+          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+            <p style={{margin:0,lineHeight:1.8,fontSize:15,textAlign:"right",flex:1}}>{expl}</p>
+            {!isExam&&<button onClick={()=>Audio.speak(expl,{rate:0.85})} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 8px",color:T.muted,cursor:"pointer",fontSize:15,flexShrink:0}}>🔈</button>}
+          </div>
+          {!isCorrect&&q.exp&&<div style={{marginTop:10,padding:"12px 14px",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:T.r.sm,textAlign:"right"}}>
+            <div style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:4}}>📖 מקור וידע</div>
+            <div style={{fontSize:14,lineHeight:1.8,color:"rgba(255,255,255,0.8)"}}>{q.exp}</div>
+            <div style={{fontSize:13,color:T.gold,marginTop:6}}>✅ התשובה הנכונה: <strong>{q.a||(q.acceptedAnswers||[])[0]||""}</strong></div>
+          </div>}
+        </>}
       {!loadExpl&&<Btn v={isCorrect?"success":"primary"} onClick={next} style={{marginTop:12,marginBottom:0}}>{isLast?"סיום! 🏁":"הבאה ▶"}</Btn>}
     </Card>}
   </div>;
@@ -1534,6 +1609,7 @@ function Result({nav}) {
     </Card>}
     {s.mode===MODE.NORMAL&&s.topic&&<Btn onClick={()=>{dispatch({type:"START",topic:s.topic,mode:MODE.NORMAL});nav("quiz",{topic:s.topic});}}>🔄 סיבוב נוסף</Btn>}
     {s.mode===MODE.EXAM&&<Btn onClick={()=>{dispatch({type:"START",topic:s.topic,mode:MODE.EXAM});nav("quiz",{topic:s.topic,mode:MODE.EXAM});}}>🎓 מבחן נוסף</Btn>}
+    {s.topic&&s.topic.id!=="mixed"&&<Btn v="ai" onClick={()=>nav("aigen",{topic:s.topic})}>⭐ שאלות בונוס על {s.topic.name}</Btn>}
     {wrongs>0&&<Btn v="purple" onClick={()=>{dispatch({type:"START",topic:null,mode:MODE.REVIEW});nav("quiz",{mode:MODE.REVIEW});}}>🔄 חזרה על {wrongs} טעויות</Btn>}
     <Btn v="ghost" onClick={()=>nav("home")}>🏠 חזרה לבית</Btn>
   </div>;
@@ -2034,6 +2110,168 @@ function ParentSummary(){
   </div>;
 }
 
+// ── FILL IN THE BLANK GAME ──────────────────
+function FillBlank({nav,online}) {
+  const {state,dispatch}=useS();
+  const [questions,setQuestions]=useState([]);
+  const [idx,setIdx]=useState(0);
+  const [answer,setAnswer]=useState("");
+  const [result,setResult]=useState(null);
+  const [score,setScore]=useState({c:0,t:0});
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    const generate=async()=>{
+      setLoading(true);
+      const prompts=Array.from({length:5},()=>{
+        const topic=TOPICS[Math.floor(Math.random()*TOPICS.length)];
+        return{topic,prompt:`צור משפט השלמה על ספר ${topic.name} בתנ"ך לילדה בת 10.
+המשפט חייב להכיל מקום ריק אחד שמסומן ב ___.
+פורמט JSON בלבד:
+{"sentence":"המשפט עם ___","answer":"המילה החסרה","hint":"רמז קצר"}
+ללא טקסט נוסף.`};
+      });
+      const results=[];
+      for(const p of prompts){
+        try{
+          const raw=await callClaude(p.prompt,200);
+          const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
+          if(parsed.sentence&&parsed.answer) results.push({...parsed,topic:p.topic});
+        }catch{}
+      }
+      setQuestions(results.length>0?results:[
+        {sentence:"ה' ברא את העולם ב___ ימים",answer:"שישה",hint:"ביום השביעי שבת",topic:TOPICS[0]},
+        {sentence:"נח בנה ___ להציל את משפחתו",answer:"תיבה",hint:"כלי שיט גדול",topic:TOPICS[0]},
+        {sentence:"משה ראה ___ בוער ואינו נשרף",answer:"סנה",hint:"שיח במדבר",topic:TOPICS[1]},
+      ]);
+      setLoading(false);
+    };
+    if(online) generate(); else{
+      setQuestions([
+        {sentence:"ה' ברא את העולם ב___ ימים",answer:"שישה",hint:"ביום השביעי שבת",topic:TOPICS[0]},
+        {sentence:"נח בנה ___ להציל את משפחתו",answer:"תיבה",hint:"כלי שיט גדול",topic:TOPICS[0]},
+        {sentence:"משה ראה ___ בוער ואינו נשרף",answer:"סנה",hint:"שיח במדבר",topic:TOPICS[1]},
+      ]);
+      setLoading(false);
+    }
+  },[]);
+
+  if(loading) return<div style={{textAlign:"center",padding:60,color:T.muted}}><div style={{fontSize:40,marginBottom:12,animation:"pulse 1.2s infinite"}}>📝</div>יוצר משפטים...</div>;
+  if(!questions.length) return<div style={{textAlign:"center",padding:60}}><p style={{color:T.muted}}>לא הצלחנו ליצור משפטים</p><Btn onClick={()=>nav("home")}>חזרה</Btn></div>;
+
+  const q=questions[idx];
+  if(!q) return<div style={{textAlign:"center",padding:30}}>
+    <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+    <h2 style={{color:T.gold,fontSize:24}}>סיימת! {score.c}/{score.t}</h2>
+    <Btn onClick={()=>nav("home")} style={{marginTop:16}}>🏠 חזרה</Btn>
+  </div>;
+
+  const check=()=>{
+    const ok=answer.trim()===q.answer||answer.trim().includes(q.answer)||q.answer.includes(answer.trim());
+    setResult(ok);setScore(s=>({c:s.c+(ok?1:0),t:s.t+1}));
+    if(ok){Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
+  };
+  const nextQ=()=>{setIdx(i=>i+1);setAnswer("");setResult(null);};
+
+  const parts=q.sentence.split("___");
+  return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:18}}>📝 השלם את המשפט</h2><span style={{marginRight:"auto",fontSize:13,color:T.muted}}>{idx+1}/{questions.length}</span></div>
+    <Card style={{padding:"28px 20px",textAlign:"center"}}>
+      <div style={{fontSize:20,marginBottom:6}}>{q.topic?.emoji}</div>
+      <div style={{fontSize:20,lineHeight:2,fontWeight:600,direction:"rtl"}}>
+        {parts[0]}<span style={{display:"inline-block",borderBottom:`3px solid ${result===true?T.success:result===false?T.danger:T.gold}`,minWidth:80,padding:"2px 8px",margin:"0 4px",color:result!==null?(result?T.success:T.danger):T.gold,fontWeight:800}}>{result!==null?q.answer:"___"}</span>{parts[1]||""}
+      </div>
+      <div style={{fontSize:12,color:T.muted,marginTop:8}}>💡 {q.hint}</div>
+    </Card>
+    {result===null?<div style={{display:"flex",gap:8,marginTop:10}}>
+      <input value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()} dir="rtl" placeholder="הקלד את המילה..." style={{flex:1,padding:"16px",background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,color:"#fff",fontSize:17,outline:"none"}}/>
+      <Btn onClick={check} style={{width:"auto",marginBottom:0,padding:"16px 24px"}}>בדוק</Btn>
+    </div>
+    :<div>
+      <Card glow color={result?T.success:T.danger} style={{borderColor:result?`${T.success}44`:`${T.danger}44`,textAlign:"center"}}>
+        <div style={{fontSize:28}}>{result?"🌟":"💪"}</div>
+        <div style={{fontSize:16,marginTop:4,color:result?"#5DFC8A":"#FF6B6B"}}>{result?"נכון!":` התשובה: ${q.answer}`}</div>
+      </Card>
+      <Btn onClick={nextQ}>{idx<questions.length-1?"הבא ▶":"סיום 🏁"}</Btn>
+    </div>}
+  </div>;
+}
+
+// ── WORD SCRAMBLE GAME ──────────────────────
+function WordScramble({nav}) {
+  const [questions]=useState(()=>{
+    const pool=[
+      {word:"אברהם",hint:"האב הראשון",topic:"bereshit"},
+      {word:"משה",hint:"מנהיג יציאת מצרים",topic:"shemot"},
+      {word:"ירושלים",hint:"עיר הקודש",topic:"yehoshua"},
+      {word:"שמשון",hint:"גיבור בעל כוח עצום",topic:"shoftim"},
+      {word:"דבורה",hint:"שופטת ונביאה",topic:"shoftim"},
+      {word:"גוליית",hint:"ענק פלשתי",topic:"shmuel"},
+      {word:"שלמה",hint:"המלך החכם ביותר",topic:"melachim_a"},
+      {word:"אסתר",hint:"מלכת פרס שהצילה את עמה",topic:"esther"},
+      {word:"יונה",hint:"נביא שבלע דג",topic:"yona"},
+      {word:"נחמיה",hint:"בנה את חומות ירושלים",topic:"nechemya"},
+      {word:"דניאל",hint:"שרד בגוב אריות",topic:"daniel"},
+      {word:"רבקה",hint:"אשת יצחק",topic:"bereshit"},
+      {word:"יהושע",hint:"כובש הארץ",topic:"yehoshua"},
+      {word:"ירמיהו",hint:"נביא החורבן",topic:"yirmiyahu"},
+      {word:"בועז",hint:"בעלה של רות",topic:"rut"},
+    ];
+    return Engine.shuffle([...pool]).slice(0,7);
+  });
+  const [idx,setIdx]=useState(0);
+  const [letters,setLetters]=useState([]);
+  const [selected,setSelected]=useState([]);
+  const [result,setResult]=useState(null);
+  const [score,setScore]=useState({c:0,t:0});
+
+  useEffect(()=>{
+    if(!questions[idx]) return;
+    const word=questions[idx].word;
+    const shuffled=Engine.shuffle([...word].map((c,i)=>({c,i})));
+    setLetters(shuffled);setSelected([]);setResult(null);
+  },[idx]);
+
+  const q=questions[idx];
+  if(!q) return<div style={{textAlign:"center",padding:30}}>
+    <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+    <h2 style={{color:T.gold,fontSize:24}}>סיימת! {score.c}/{score.t}</h2>
+    <Btn onClick={()=>nav("home")} style={{marginTop:16}}>🏠 חזרה</Btn>
+  </div>;
+
+  const tap=(letter)=>{
+    if(result!==null) return;
+    const newSel=[...selected,letter];
+    setSelected(newSel);
+    if(newSel.length===q.word.length){
+      const guess=newSel.map(l=>l.c).join("");
+      const ok=guess===q.word;
+      setResult(ok);setScore(s=>({c:s.c+(ok?1:0),t:s.t+1}));
+      if(ok){Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
+    }
+  };
+  const undo=()=>{if(selected.length>0&&result===null) setSelected(s=>s.slice(0,-1));};
+  const available=letters.filter(l=>!selected.includes(l));
+
+  return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:18}}>🔤 תפזורת מילים</h2><span style={{marginRight:"auto",fontSize:13,color:T.muted}}>{idx+1}/{questions.length}</span></div>
+    <Card style={{padding:"28px 20px",textAlign:"center"}}>
+      <div style={{fontSize:14,color:T.gold,marginBottom:12}}>💡 {q.hint}</div>
+      {/* Selected letters */}
+      <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:20,minHeight:52,direction:"rtl"}}>
+        {Array.from({length:q.word.length},(_,i)=><div key={i} style={{width:44,height:52,borderRadius:T.r.xs,border:`2px solid ${result===true?T.success:result===false?T.danger:selected[i]?T.gold:"rgba(255,255,255,0.15)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:result===true?T.success:result===false?T.danger:"#fff",background:selected[i]?"rgba(255,215,0,0.1)":"rgba(255,255,255,0.03)"}}>{selected[i]?.c||""}</div>)}
+      </div>
+      {result!==null&&<div style={{fontSize:16,color:result?T.success:T.danger,marginBottom:12}}>{result?"🌟 נכון!":`💪 התשובה: ${q.word}`}</div>}
+      {/* Available letters */}
+      {result===null&&<div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap",direction:"rtl"}}>
+        {available.map((l,i)=><button key={l.i} onClick={()=>tap(l)} style={{width:48,height:52,borderRadius:T.r.sm,border:`2px solid ${T.border}`,background:"rgba(255,255,255,0.06)",color:"#fff",fontSize:22,fontWeight:700,cursor:"pointer"}}>{l.c}</button>)}
+      </div>}
+      {result===null&&selected.length>0&&<button onClick={undo} style={{marginTop:12,background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"6px 16px",color:T.muted,cursor:"pointer",fontSize:13}}>↩ ביטול</button>}
+    </Card>
+    {result!==null&&<Btn onClick={()=>setIdx(i=>i+1)}>{idx<questions.length-1?"הבא ▶":"סיום 🏁"}</Btn>}
+  </div>;
+}
+
 function TeacherDash(){
   const TEACHER_PIN="5678";
   const urlPin=new URLSearchParams(window.location.search).get("pin");
@@ -2162,6 +2400,7 @@ const SCREENS = {
   daily:DailyChallenge, aigen:AIGenerator, tutor:Tutor,
   map:VisualMap, stats:Stats, achievements:Achievements,
   glossary:Glossary, parent:Parent, summary:ParentSummary, teacher:TeacherDash,
+  fillblank:FillBlank, scramble:WordScramble,
 };
 
 function Router() {
