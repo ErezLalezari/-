@@ -2191,7 +2191,7 @@ function Router() {
       input:focus,select:focus{outline:none;border-color:${T.gold} !important;}
       ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
     `}</style>
-    <div style={{maxWidth:600,margin:`${online?"0":"36px"} auto 0`,padding:"16px 14px 50px",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:"100%",margin:`${online?"0":"36px"} auto 0`,padding:"16px 16px 50px",position:"relative",zIndex:1}}>
       <Screen nav={nav} params={route.params} online={online}/>
 <FeedbackBtn screen={route.screen}/>
     </div>
