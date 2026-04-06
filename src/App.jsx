@@ -894,14 +894,14 @@ function AnswerOpt({opt,idx,state:st,onClick}) {
   const c=cols[st]||cols.default;
   return <button onClick={onClick} style={{
     background:c.bg, border:`2px solid ${c.border}`,
-    borderRadius:T.r.md, padding:"13px 14px", marginBottom:9,
+    borderRadius:T.r.md, padding:"18px 18px", marginBottom:10,
     cursor:st==="default"?"pointer":"default",
-    color:T.text, fontSize:15, textAlign:"right", width:"100%",
-    display:"flex", alignItems:"center", gap:11,
+    color:T.text, fontSize:18, textAlign:"right", width:"100%",
+    display:"flex", alignItems:"center", gap:12,
     transition:"all 0.18s ease", fontWeight:st==="correct"?700:400,
   }} onMouseEnter={e=>{if(st==="default")e.currentTarget.style.background="rgba(255,255,255,0.09)";}}
      onMouseLeave={e=>{if(st==="default")e.currentTarget.style.background=c.bg;}}>
-    <span style={{fontSize:17,minWidth:26,textAlign:"center"}}>{icons[st]||icons.default}</span>
+    <span style={{fontSize:20,minWidth:30,textAlign:"center",fontWeight:700}}>{icons[st]||icons.default}</span>
     <span style={{flex:1}}>{opt}</span>
   </button>;
 }
@@ -1475,10 +1475,10 @@ function Quiz({nav,params,online}) {
     </div>}
 
     {/* Question */}
-    <Card style={{textAlign:"center",padding:"26px 18px"}}>
+    <Card style={{textAlign:"center",padding:"32px 22px"}}>
       {q.imageUrl?<img src={q.imageUrl} alt="" style={{width:"100%",maxHeight:200,objectFit:"contain",borderRadius:T.r.sm,marginBottom:12,background:"rgba(255,255,255,0.05)"}}/>
         :<div style={{fontSize:42,marginBottom:10}}>{mode===MODE.EXAM?"🎓":topic?.emoji||"📖"}</div>}
-      <h2 style={{fontSize:19,fontWeight:800,lineHeight:1.65,margin:0}}>{q.q}</h2>
+      <h2 style={{fontSize:24,fontWeight:800,lineHeight:1.7,margin:0}}>{q.q}</h2>
       {!isExam&&<div style={{display:"flex",justifyContent:"center",gap:8,marginTop:12,flexWrap:"wrap"}}>
         {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:T.muted,cursor:"pointer",fontSize:12}}>{hint?"🙈 הסתר":"💡 רמז"}</button>}
         <button onClick={()=>{ if(speaking){Audio.stop();setSpeaking(false);}else{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);}}} style={{background:speaking?`${T.gold}20`:"none",border:`1px solid ${speaking?T.gold:T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:speaking?T.gold:T.muted,cursor:"pointer",fontSize:12}}>{speaking?"🔊":"🔈"}</button>
