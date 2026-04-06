@@ -543,8 +543,9 @@ const INIT = {
   topics:{}, cards:{}, unlocked:[], reviewSessions:0,
   examSessions:0, dailyDone:0, aiChats:0,
   lastPerfect:false, lastDaily:null, session:null,
+  audioOn:true, confidence:{},
 };
-const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily"];
+const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily","audioOn","confidence"];
 
 function load() {
   try { const r=localStorage.getItem(STORAGE_KEY); return r?{...INIT,...JSON.parse(r),session:null}:INIT; }
@@ -568,7 +569,7 @@ function reducer(state, action) {
       const q = mode===MODE.REVIEW ? Engine.buildReviewQueue(state.cards)
               : isMix             ? Engine.buildMixedQueue(state.cards,state.topics)
               :                     Engine.buildQueue(topic.id,state.cards,state.topics);
-      return {...state, session:{topic:isMix?MIXED_TOPIC:topic,queue:q,mode:mode||MODE.NORMAL,idx:0,correct:0,total:0}};
+      return {...state, session:{topic:isMix?MIXED_TOPIC:topic,queue:q,mode:mode||MODE.NORMAL,idx:0,correct:0,total:0,streak:0,wrongStreak:0,diff:"medium"}};
     }
     case "ANSWER": {
       const {qid,correct,isOpen,answerTime=999} = action;
@@ -587,12 +588,24 @@ function reducer(state, action) {
       const newOpenCorrect=state.openCorrect+(isOpen&&correct?1:0);
       const snap={...state,total:newTotal,correct:newCorrect,topics,openCorrect:newOpenCorrect,fastAnswers:state.fastAnswers+(correct&&answerTime<=EXAM_SECS?1:0)};
       const newAch=Engine.checkAchievements(snap,state.unlocked);
+      // Adaptive difficulty: track streaks
+      const newStreak=correct?(s.streak||0)+1:0;
+      const newWrongStreak=correct?0:(s.wrongStreak||0)+1;
+      const prevDiff=s.diff||"medium";
+      const newDiff=newStreak>=3?"hard":newWrongStreak>=2?"easy":prevDiff;
+      // Confidence per topic (0-100)
+      const conf={...state.confidence};
+      if(tid&&tid!=="mixed"){
+        const prev=conf[tid]||50;
+        const delta=correct?(answerTime<10?8:answerTime<20?5:2):(answerTime>15?-10:-6);
+        conf[tid]=Math.max(0,Math.min(100,prev+delta));
+      }
       return {
-        ...state, total:newTotal, correct:newCorrect, openCorrect:newOpenCorrect, topics,
+        ...state, total:newTotal, correct:newCorrect, openCorrect:newOpenCorrect, topics, confidence:conf,
         cards:{...state.cards,[qid]:{tc,intv,next:next.toDateString(),seen:true}},
         unlocked:[...state.unlocked,...newAch.map(a=>a.id)],
         _newAch:newAch,
-        session:{...s,correct:s.correct+(correct?1:0),total:s.total+1,idx:s.idx},
+        session:{...s,correct:s.correct+(correct?1:0),total:s.total+1,idx:s.idx,streak:newStreak,wrongStreak:newWrongStreak,diff:newDiff},
       };
     }
     case "NEXT":
@@ -612,6 +625,7 @@ function reducer(state, action) {
     case "AI_CHAT":
       return {...state, aiChats:(state.aiChats||0)+1};
     case "CLEAR_ACH": return {...state,_newAch:[]};
+    case "TOGGLE_AUDIO": return {...state,audioOn:!state.audioOn};
     case "RESET": localStorage.removeItem(STORAGE_KEY); return {...INIT};
     default: return state;
   }
@@ -634,6 +648,7 @@ function Store({children}) {
         if(!DB[row.topic]) DB[row.topic]=[];
         if(DB[row.topic].some(q=>q.id===row.id)) return;
         const q = {id:row.id, type:row.type==="open"?Q.OPEN:Q.MULTIPLE, q:row.q, hint:row.hint||"", exp:row.exp||""};
+        if(row.image_url) q.imageUrl=row.image_url;
         if(row.type==="open") q.acceptedAnswers=row.accepted_answers||[];
         else { q.a=row.a; q.o=row.options||[]; }
         DB[row.topic].push(q);
@@ -994,15 +1009,21 @@ function Home({nav}) {
       🤖 שאלות חדשות מ-AI – אין סוף שאלות!
     </Btn>
 
-    {/* Reminders */}
-    <Card style={{padding:T.p.md,borderColor:remOn?T.borderGold:T.border}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div><div style={{fontWeight:700,fontSize:15}}>🔔 תזכורת יומית</div>
-          <div style={{fontSize:11,color:T.muted,marginTop:2}}>{remOn&&notif==="granted"?`הבאה: ${label}`:notif==="denied"?"חסומות ⚠️":"לא פעיל"}</div>
+    {/* Audio + Reminders */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+      <Card style={{padding:"14px",borderColor:state.audioOn?"rgba(69,183,209,0.35)":T.border,marginBottom:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontWeight:700,fontSize:14}}>🔊 קריאה קולית</div><div style={{fontSize:11,color:T.muted,marginTop:2}}>{state.audioOn?"פעיל":"כבוי"}</div></div>
+          <button onClick={()=>dispatch({type:"TOGGLE_AUDIO"})} style={{background:state.audioOn?"rgba(69,183,209,0.2)":"rgba(255,255,255,0.07)",border:`1.5px solid ${state.audioOn?"#45B7D1":T.border}`,borderRadius:20,padding:"6px 12px",color:state.audioOn?"#45B7D1":T.muted,cursor:"pointer",fontWeight:700,fontSize:13}}>{state.audioOn?"✓":"הפעלי"}</button>
         </div>
-        {notif!=="unsupported"&&notif!=="denied"&&<button onClick={toggleRem} style={{background:remOn?`${T.gold}20`:"rgba(255,255,255,0.07)",border:`1.5px solid ${remOn?T.gold:T.border}`,borderRadius:20,padding:"6px 14px",color:remOn?T.gold:T.muted,cursor:"pointer",fontWeight:700,fontSize:13}}>{remOn?"פעיל ✓":"הפעלי"}</button>}
-      </div>
-    </Card>
+      </Card>
+      <Card style={{padding:"14px",borderColor:remOn?T.borderGold:T.border,marginBottom:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontWeight:700,fontSize:14}}>🔔 תזכורת</div><div style={{fontSize:11,color:T.muted,marginTop:2}}>{remOn&&notif==="granted"?"פעיל":notif==="denied"?"חסום":"כבוי"}</div></div>
+          {notif!=="unsupported"&&notif!=="denied"&&<button onClick={toggleRem} style={{background:remOn?`${T.gold}20`:"rgba(255,255,255,0.07)",border:`1.5px solid ${remOn?T.gold:T.border}`,borderRadius:20,padding:"6px 12px",color:remOn?T.gold:T.muted,cursor:"pointer",fontWeight:700,fontSize:13}}>{remOn?"✓":"הפעלי"}</button>}
+        </div>
+      </Card>
+    </div>
 
     {/* Nav grid */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
@@ -1024,24 +1045,60 @@ function BookIntro({nav,params}) {
   const {state}=useS();
   const topic=params?.topic;
   const sum=topic?SUMMARIES[topic.id]:null;
-  const first=topic&&!state.topics?.[topic.id];
-  useEffect(()=>{ if(!sum||!first) nav("quiz",params); },[]);
-  if(!sum||!first)return null;
+  const [step,setStep]=useState(0);
+  const [animIn,setAnimIn]=useState(true);
+  const timerRef=useRef(null);
+
+  useEffect(()=>{ if(!sum) nav("quiz",params); },[]);
+  useEffect(()=>{
+    if(!sum||step>=sum.length) return;
+    if(state.audioOn) Audio.speak(sum[step],{rate:0.85});
+    timerRef.current=setTimeout(()=>advance(),5000);
+    return()=>{clearTimeout(timerRef.current);Audio.stop();};
+  },[step]);
+
+  const advance=()=>{
+    if(step>=sum.length-1) return;
+    setAnimIn(false);
+    setTimeout(()=>{setStep(s=>s+1);setAnimIn(true);},250);
+  };
+  const goBack=()=>{
+    if(step<=0) return;
+    setAnimIn(false);
+    setTimeout(()=>{setStep(s=>s-1);setAnimIn(true);},250);
+  };
+
+  if(!sum)return null;
+  const done=step>=sum.length-1;
+  const storyEmojis=["📜","⚡","🌟","✨","🔥","💫","🌈","👑"];
+
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📖 לפני שמתחילים</h2></div>
-    <Card style={{textAlign:"center",padding:"28px 20px",borderColor:`${topic.cp}44`}}>
-      <div style={{fontSize:60,marginBottom:10,animation:"float 2s ease-in-out infinite"}}>{topic.emoji}</div>
-      <h2 style={{fontSize:24,fontWeight:900,margin:"0 0 6px",color:topic.cp}}>{topic.name}</h2>
-      <div style={{fontSize:12,color:T.muted,marginBottom:18}}>סיכום קצר לפני השאלות</div>
-      <div style={{textAlign:"right"}}>
-        {sum.map((line,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:10,padding:"10px 12px",background:"rgba(255,255,255,0.04)",borderRadius:T.r.sm,borderRight:`3px solid ${topic.cp}77`}}>
-          <span style={{color:topic.cp,fontWeight:800,flexShrink:0}}>{i+1}.</span>
-          <span style={{fontSize:14,lineHeight:1.6}}>{line}</span>
-        </div>)}
-      </div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+      <BackBtn onClick={()=>nav("home")}/>
+      <h2 style={{margin:0,fontSize:18,flex:1}}>📖 הסיפור של {topic.name}</h2>
+      <button onClick={()=>nav("quiz",params)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:T.muted,cursor:"pointer",fontSize:12}}>דלגי ▶</button>
+    </div>
+
+    {/* Progress dots */}
+    <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:16}}>
+      {sum.map((_,i)=><div key={i} style={{width:i===step?24:8,height:8,borderRadius:4,background:i<=step?topic.cp:"rgba(255,255,255,0.15)",transition:"all 0.3s"}}/>)}
+    </div>
+
+    {/* Story card */}
+    <Card style={{textAlign:"center",padding:"32px 22px",borderColor:`${topic.cp}44`,minHeight:220,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",opacity:animIn?1:0,transform:animIn?"translateY(0)":"translateY(20px)",transition:"all 0.25s ease-out"}}>
+      <div style={{fontSize:56,marginBottom:14,animation:"float 2.5s ease-in-out infinite"}}>{step===0?topic.emoji:storyEmojis[step%storyEmojis.length]}</div>
+      <div style={{fontSize:11,color:topic.cp,fontWeight:700,marginBottom:8,letterSpacing:1}}>{topic.name} · {step+1}/{sum.length}</div>
+      <div style={{fontSize:18,lineHeight:1.8,fontWeight:600,color:"#fff",maxWidth:340}}>{sum[step]}</div>
     </Card>
-    <Btn onClick={()=>nav("quiz",params)} style={{fontSize:17}}>🚀 יאללה, מתחילים!</Btn>
-    <Btn v="ghost" onClick={()=>nav("quiz",params)} style={{fontSize:13,opacity:0.55}}>דלגי על הסיכום</Btn>
+
+    {/* Navigation */}
+    <div style={{display:"flex",gap:10,marginTop:14}}>
+      <button onClick={goBack} disabled={step===0} style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:step===0?T.muted:"#fff",cursor:step===0?"default":"pointer",fontWeight:700,fontSize:16,opacity:step===0?0.3:1}}>→ הקודם</button>
+      {done
+        ?<Btn onClick={()=>nav("quiz",params)} style={{flex:2,fontSize:17,marginBottom:0}}>🚀 יאללה, מתחילים!</Btn>
+        :<button onClick={advance} style={{flex:2,background:`linear-gradient(135deg,${topic.cp},${topic.cs})`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:16}}>← הבא</button>
+      }
+    </div>
   </div>;
 }
 
@@ -1338,9 +1395,10 @@ function Quiz({nav,params,online}) {
     if(!session||isExam)return;
     const q=session.queue[session.idx];
     if(!q)return;
+    if(!state.audioOn) return;
     const d=setTimeout(()=>{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);},300);
     return()=>{clearTimeout(d);Audio.stop();};
-  },[session?.idx,isExam]);
+  },[session?.idx,isExam,state.audioOn]);
 
   useEffect(()=>{ if(state._newAch?.length>0){setAchs(state._newAch);dispatch({type:"CLEAR_ACH"});} },[state._newAch]);
 
@@ -1374,7 +1432,7 @@ function Quiz({nav,params,online}) {
       setLoadExpl(true);
       const e=await explainAnswer({q,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:!isMulti}).catch(()=>ok?`✅ ${q.exp}`:`💡 ${ca}. ${q.exp}`);
       setExpl(e||"");setLoadExpl(false);
-      setTimeout(()=>Audio.speak(e||"",{rate:0.85}),200);
+      if(state.audioOn) setTimeout(()=>Audio.speak(e||"",{rate:0.85}),200);
     } else { setExpl(ok?`✅ ${q.exp}`:`💡 ${ca}. ${q.exp}`); }
   };
 
@@ -1404,6 +1462,7 @@ function Quiz({nav,params,online}) {
         </div>
         <Bar value={session.idx+1} max={session.queue.length} color={tc} height={5}/>
       </div>
+      {!isExam&&<span style={{fontSize:10,padding:"3px 8px",borderRadius:10,fontWeight:700,flexShrink:0,background:session.diff==="hard"?"rgba(255,107,107,0.15)":session.diff==="easy"?"rgba(93,252,138,0.15)":"rgba(255,215,0,0.15)",color:session.diff==="hard"?"#FF6B6B":session.diff==="easy"?"#5DFC8A":"#FFD700",border:`1px solid ${session.diff==="hard"?"rgba(255,107,107,0.3)":session.diff==="easy"?"rgba(93,252,138,0.3)":"rgba(255,215,0,0.3)"}`}}>{session.diff==="hard"?"קשה":session.diff==="easy"?"קל":"בינוני"}</span>}
     </div>
 
     {/* Exam timer */}
@@ -1417,7 +1476,8 @@ function Quiz({nav,params,online}) {
 
     {/* Question */}
     <Card style={{textAlign:"center",padding:"26px 18px"}}>
-      <div style={{fontSize:42,marginBottom:10}}>{mode===MODE.EXAM?"🎓":topic?.emoji||"📖"}</div>
+      {q.imageUrl?<img src={q.imageUrl} alt="" style={{width:"100%",maxHeight:200,objectFit:"contain",borderRadius:T.r.sm,marginBottom:12,background:"rgba(255,255,255,0.05)"}}/>
+        :<div style={{fontSize:42,marginBottom:10}}>{mode===MODE.EXAM?"🎓":topic?.emoji||"📖"}</div>}
       <h2 style={{fontSize:19,fontWeight:800,lineHeight:1.65,margin:0}}>{q.q}</h2>
       {!isExam&&<div style={{display:"flex",justifyContent:"center",gap:8,marginTop:12,flexWrap:"wrap"}}>
         {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:T.muted,cursor:"pointer",fontSize:12}}>{hint?"🙈 הסתר":"💡 רמז"}</button>}
@@ -1974,16 +2034,139 @@ function ParentSummary(){
   </div>;
 }
 
+function TeacherDash(){
+  const TEACHER_PIN="5678";
+  const urlPin=new URLSearchParams(window.location.search).get("pin");
+  const[authed,setAuthed]=useState(urlPin===TEACHER_PIN);
+  const[pin,setPin]=useState("");
+  const[tab,setTab]=useState("overview");
+  const[results,setResults]=useState([]);
+  const[assignments,setAssignments]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[selTopic,setSelTopic]=useState("");
+  const[weekStart,setWeekStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];});
+
+  useEffect(()=>{
+    if(!authed||!supabase) return;
+    Promise.all([
+      supabase.from("quiz_results").select("*").order("created_at",{ascending:false}).limit(500),
+      supabase.from("assignments").select("*").order("created_at",{ascending:false}).limit(20),
+    ]).then(([r,a])=>{
+      setResults(r.data||[]);
+      setAssignments(a.data||[]);
+      setLoading(false);
+    });
+  },[authed]);
+
+  const topicName=id=>ALL_TOPICS.find(t=>t.id===id)?.name||id;
+
+  if(!authed) return<div style={{direction:"rtl",padding:"60px 20px",textAlign:"center"}}>
+    <div style={{fontSize:48,marginBottom:16}}>👩‍🏫</div>
+    <h2 style={{color:"#fff",fontSize:22,marginBottom:20}}>לוח מורה</h2>
+    <input value={pin} onChange={e=>setPin(e.target.value)} type="password" placeholder="הזן קוד מורה" dir="rtl" style={{width:160,textAlign:"center",padding:"14px",fontSize:20,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,color:"#fff",letterSpacing:8}}/>
+    <Btn onClick={()=>{if(pin===TEACHER_PIN)setAuthed(true);else setPin("");}} style={{marginTop:12}}>כניסה</Btn>
+  </div>;
+
+  if(loading) return<div style={{textAlign:"center",padding:60,color:T.muted}}>טוען...</div>;
+
+  const total=results.length, correct=results.filter(r=>r.correct).length;
+  const pct=total?Math.round(correct/total*100):0;
+  const topicStats={};
+  results.forEach(r=>{if(!topicStats[r.topic])topicStats[r.topic]={c:0,t:0};topicStats[r.topic].t++;if(r.correct)topicStats[r.topic].c++;});
+  const today=new Date().toISOString().split("T")[0];
+  const todayResults=results.filter(r=>r.created_at?.startsWith(today));
+  const weekResults=results.filter(r=>{const d=new Date(r.created_at);const w=new Date();w.setDate(w.getDate()-7);return d>=w;});
+
+  const tabs=[{id:"overview",label:"סקירה",emoji:"📊"},{id:"results",label:"תוצאות",emoji:"📋"},{id:"assign",label:"מטלות",emoji:"📝"}];
+
+  const saveAssignment=async()=>{
+    if(!selTopic||!supabase)return;
+    const end=new Date(weekStart);end.setDate(end.getDate()+7);
+    const{data}=await supabase.from("assignments").insert({topic_ids:[selTopic],week_start:weekStart,week_end:end.toISOString().split("T")[0]}).select();
+    if(data)setAssignments([...data,...assignments]);
+    setSelTopic("");
+  };
+
+  return<div style={{direction:"rtl",padding:"20px 16px",width:"100%",minHeight:"100vh"}}>
+    <div style={{textAlign:"center",marginBottom:20}}>
+      <h2 style={{color:"#FFD700",margin:"0 0 4px",fontSize:24,fontWeight:800}}>👩‍🏫 לוח מורה</h2>
+      <div style={{color:"rgba(255,255,255,0.4)",fontSize:13}}>תלמידה: לייה</div>
+    </div>
+
+    {/* Tabs */}
+    <div style={{display:"flex",gap:6,marginBottom:16}}>
+      {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:tab===t.id?"rgba(255,215,0,0.15)":"rgba(255,255,255,0.05)",border:`1px solid ${tab===t.id?"rgba(255,215,0,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:T.r.sm,padding:"10px 6px",color:tab===t.id?"#FFD700":"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:700,fontSize:13}}>{t.emoji} {t.label}</button>)}
+    </div>
+
+    {tab==="overview"&&<div>
+      <Card style={{padding:T.p.md}}>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{total}</div><div style={{fontSize:12,color:T.muted}}>סה״כ שאלות</div></div>
+          <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:pct>=70?"#5DFC8A":"#FFD700"}}>{pct}%</div><div style={{fontSize:12,color:T.muted}}>דיוק</div></div>
+          <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:"#45B7D1"}}>{todayResults.length}</div><div style={{fontSize:12,color:T.muted}}>היום</div></div>
+          <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:"#C3A6FF"}}>{weekResults.length}</div><div style={{fontSize:12,color:T.muted}}>השבוע</div></div>
+        </div>
+      </Card>
+      <Card style={{padding:T.p.md}}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:12,color:"#fff"}}>📚 לפי נושא</div>
+        {Object.entries(topicStats).sort((a,b)=>a[1].c/a[1].t-b[1].c/b[1].t).map(([tid,s])=>{
+          const p=Math.round(s.c/s.t*100);
+          return<div key={tid} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:14,marginBottom:3}}>
+              <span style={{color:"#fff"}}>{topicName(tid)}</span>
+              <span style={{color:p>=70?"#5DFC8A":p>=50?"#FFD700":"#FF6B6B",fontWeight:700}}>{p}% ({s.c}/{s.t})</span>
+            </div>
+            <Bar value={p} max={100} color={p>=70?"#5DFC8A":p>=50?"#FFD700":"#FF6B6B"} height={6}/>
+          </div>;
+        })}
+      </Card>
+    </div>}
+
+    {tab==="results"&&<div>
+      <div style={{fontSize:13,color:T.muted,marginBottom:10}}>500 תוצאות אחרונות</div>
+      {results.slice(0,50).map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"rgba(255,255,255,0.04)",borderRadius:T.r.xs,marginBottom:4,borderRight:`3px solid ${r.correct?"#5DFC8A":"#FF6B6B"}`}}>
+        <div>
+          <span style={{fontSize:13,color:"#fff"}}>{topicName(r.topic)}</span>
+          <span style={{fontSize:11,color:T.muted,marginRight:8}}>{r.answer_time?` · ${r.answer_time}″`:""}</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:T.muted}}>{new Date(r.created_at).toLocaleDateString("he-IL")}</span>
+          <span style={{fontSize:14}}>{r.correct?"✅":"❌"}</span>
+        </div>
+      </div>)}
+    </div>}
+
+    {tab==="assign"&&<div>
+      <Card style={{padding:T.p.md}}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:12,color:"#fff"}}>📝 מטלה חדשה</div>
+        <select value={selTopic} onChange={e=>setSelTopic(e.target.value)} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,color:"#fff",fontSize:14,marginBottom:8}}>
+          <option value="">בחר נושא...</option>
+          {TOPICS.map(t=><option key={t.id} value={t.id}>{t.emoji} {t.name}</option>)}
+        </select>
+        <input type="date" value={weekStart} onChange={e=>setWeekStart(e.target.value)} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,color:"#fff",fontSize:14,marginBottom:8}}/>
+        <Btn onClick={saveAssignment} disabled={!selTopic}>שמור מטלה</Btn>
+      </Card>
+      {assignments.length>0&&<Card style={{padding:T.p.md}}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:12,color:"#fff"}}>📋 מטלות קיימות</div>
+        {assignments.map((a,i)=><div key={i} style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",borderRadius:T.r.sm,marginBottom:6,borderRight:"3px solid #C3A6FF"}}>
+          <div style={{fontSize:14,color:"#fff",fontWeight:600}}>{(a.topic_ids||[]).map(topicName).join(", ")}</div>
+          <div style={{fontSize:11,color:T.muted,marginTop:2}}>{a.week_start} → {a.week_end}</div>
+        </div>)}
+      </Card>}
+    </div>}
+  </div>;
+}
+
 const SCREENS = {
   home:Home, intro:BookIntro, quiz:Quiz, result:Result,
   daily:DailyChallenge, aigen:AIGenerator, tutor:Tutor,
   map:VisualMap, stats:Stats, achievements:Achievements,
-  glossary:Glossary, parent:Parent, summary:ParentSummary,
+  glossary:Glossary, parent:Parent, summary:ParentSummary, teacher:TeacherDash,
 };
 
 function Router() {
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"home";
-  const [splash,setSplash]=useState(()=>initScreen!=="summary"&&!sessionStorage.getItem("v4"));
+  const [splash,setSplash]=useState(()=>initScreen!=="summary"&&initScreen!=="teacher"&&!sessionStorage.getItem("v4"));
   const [route,setRoute]=useState({screen:initScreen,params:{}});
   const online=useOnline();
 
@@ -2008,7 +2191,7 @@ function Router() {
       input:focus,select:focus{outline:none;border-color:${T.gold} !important;}
       ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
     `}</style>
-    <div style={{maxWidth:route.screen==="summary"?"100%":460,margin:`${online?"0":"36px"} auto 0`,padding:route.screen==="summary"?"0 0 50px":"16px 14px 50px",position:"relative",zIndex:1}}>
+    <div style={{maxWidth:route.screen==="summary"||route.screen==="teacher"?"100%":460,margin:`${online?"0":"36px"} auto 0`,padding:route.screen==="summary"||route.screen==="teacher"?"0 0 50px":"16px 14px 50px",position:"relative",zIndex:1}}>
       <Screen nav={nav} params={route.params} online={online}/>
 <FeedbackBtn screen={route.screen}/>
     </div>
