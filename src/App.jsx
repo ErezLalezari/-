@@ -1023,11 +1023,19 @@ function Home({nav}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <button onClick={()=>nav("fillblank")} style={{background:"linear-gradient(135deg,rgba(78,205,196,0.1),rgba(69,183,209,0.1))",border:"1px solid rgba(78,205,196,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
           <div style={{fontSize:24}}>📝</div>
-          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#4ECDC4"}}>השלם את המשפט</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#4ECDC4"}}>השלם משפט</div>
         </button>
         <button onClick={()=>nav("scramble")} style={{background:"linear-gradient(135deg,rgba(195,166,255,0.1),rgba(155,89,182,0.1))",border:"1px solid rgba(195,166,255,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
           <div style={{fontSize:24}}>🔤</div>
-          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#C3A6FF"}}>תפזורת מילים</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#C3A6FF"}}>תפזורת</div>
+        </button>
+        <button onClick={()=>nav("matching")} style={{background:"linear-gradient(135deg,rgba(255,107,107,0.1),rgba(255,142,83,0.1))",border:"1px solid rgba(255,107,107,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:24}}>🔗</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#FF6B6B"}}>התאם זוגות</div>
+        </button>
+        <button onClick={()=>nav("dialogue")} style={{background:"linear-gradient(135deg,rgba(255,215,0,0.1),rgba(255,140,0,0.1))",border:"1px solid rgba(255,215,0,0.3)",borderRadius:T.r.md,padding:"14px 10px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:24}}>💬</div>
+          <div style={{fontWeight:700,fontSize:13,marginTop:4,color:T.gold}}>דבר עם דמות</div>
         </button>
       </div>
     </Card>
@@ -1036,6 +1044,14 @@ function Home({nav}) {
     <Btn v="ghost" onClick={()=>nav("map")} style={{marginBottom:10,background:"rgba(255,215,0,0.07)",borderColor:`${T.gold}33`,color:T.gold}}>
       🗺️ מפת הספרים – ראי את ההתקדמות שלך
     </Btn>
+
+    {/* Study Mode */}
+    <Card style={{padding:T.p.md,borderColor:"rgba(93,252,138,0.25)",marginBottom:10}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={{fontWeight:700,fontSize:15}}>📚 מצב לימוד</div><div style={{fontSize:12,color:T.muted,marginTop:2}}>למד קודם, תרגל אחר כך</div></div>
+        <Btn v="success" onClick={()=>nav("study")} style={{width:"auto",marginBottom:0,padding:"8px 16px",fontSize:14}}>התחילי ▶</Btn>
+      </div>
+    </Card>
 
     {/* Topics */}
     <Card style={{padding:T.p.md}}>
@@ -2111,6 +2127,235 @@ function ParentSummary(){
 }
 
 // ── FILL IN THE BLANK GAME ──────────────────
+// ── STUDY MODE — Learn then Quiz ─────────────
+function StudyMode({nav,online}) {
+  const [selTopic,setSelTopic]=useState(null);
+  const [step,setStep]=useState("pick"); // pick → learn → quiz
+  const [lessonParts,setLessonParts]=useState([]);
+  const [partIdx,setPartIdx]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const {state}=useS();
+
+  const generateLesson=async(topic)=>{
+    setLoading(true);
+    const prompt=`את מורה תנ"ך לילדה בת 10 בשם לייה.
+צור שיעור קצר על ספר "${topic.name}" (${topic.desc}).
+חלקי את השיעור ל-5 חלקים. כל חלק:
+- כותרת קצרה
+- 2-3 משפטים פשוטים שמסבירים את הנושא
+- ציטוט קצר מהתנ"ך (אם רלוונטי)
+פורמט JSON בלבד:
+[{"title":"כותרת","text":"הסבר","verse":"פסוק (אופציונלי)"}]`;
+    try{
+      const raw=await callClaude(prompt,600);
+      const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
+      if(Array.isArray(parsed)&&parsed.length>0) setLessonParts(parsed);
+      else setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
+    }catch{
+      setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
+    }
+    setLoading(false);
+    setPartIdx(0);
+    setStep("learn");
+  };
+
+  if(step==="pick") return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📚 מצב לימוד</h2></div>
+    <Card style={{padding:T.p.md,textAlign:"center",marginBottom:14}}>
+      <div style={{fontSize:40,marginBottom:8}}>📖</div>
+      <div style={{fontSize:16,color:"rgba(255,255,255,0.7)",lineHeight:1.7}}>בחרי נושא ללמוד.<br/>קודם נלמד את החומר, אחר כך נתרגל בשאלות!</div>
+    </Card>
+    {TOPICS.map(t=><button key={t.id} onClick={()=>{setSelTopic(t);if(online)generateLesson(t);else{setLessonParts(SUMMARIES[t.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);setStep("learn");}}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"14px 16px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.md,marginBottom:8,cursor:"pointer",color:"#fff",textAlign:"right"}}>
+      <span style={{fontSize:28}}>{t.emoji}</span>
+      <div style={{flex:1}}><div style={{fontWeight:700,fontSize:16}}>{t.name}</div><div style={{fontSize:12,color:T.muted,marginTop:2}}>{t.desc}</div></div>
+      <span style={{color:T.gold,fontSize:14}}>▶</span>
+    </button>)}
+  </div>;
+
+  if(loading) return<div style={{textAlign:"center",padding:60,color:T.muted}}><div style={{fontSize:48,animation:"pulse 1.2s infinite"}}>📖</div><div style={{marginTop:12,fontSize:16}}>מכין שיעור על {selTopic?.name}...</div></div>;
+
+  if(step==="learn") {
+    const part=lessonParts[partIdx];
+    if(!part) return<div style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:12}}>✅</div><h2 style={{color:T.gold}}>סיימת ללמוד {selTopic?.name}!</h2><p style={{color:T.muted}}>עכשיו בואי נבדוק כמה זכרת</p><Btn onClick={()=>{setStep("quiz");}}>🚀 מתחילים חידון!</Btn><Btn v="ghost" onClick={()=>nav("home")}>חזרה הביתה</Btn></div>;
+
+    return<div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+        <BackBtn onClick={()=>setStep("pick")}/>
+        <h2 style={{margin:0,fontSize:18,flex:1}}>{selTopic?.emoji} לומדים {selTopic?.name}</h2>
+        <span style={{fontSize:13,color:T.muted}}>{partIdx+1}/{lessonParts.length}</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:16}}>
+        {lessonParts.map((_,i)=><div key={i} style={{width:i===partIdx?24:8,height:8,borderRadius:4,background:i<=partIdx?selTopic?.cp||T.gold:"rgba(255,255,255,0.15)",transition:"all 0.3s"}}/>)}
+      </div>
+      <Card style={{padding:"28px 22px",borderColor:`${selTopic?.cp||T.gold}44`}}>
+        <div style={{fontSize:13,color:selTopic?.cp||T.gold,fontWeight:700,marginBottom:12,letterSpacing:1}}>{part.title}</div>
+        <div style={{fontSize:18,lineHeight:2,color:"#fff",fontWeight:500}}>{part.text}</div>
+        {part.verse&&<div style={{marginTop:14,padding:"12px 16px",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:T.r.sm,fontSize:16,lineHeight:1.8,color:T.gold,fontStyle:"italic"}}>"{part.verse}"</div>}
+      </Card>
+      <div style={{display:"flex",gap:10,marginTop:14}}>
+        <button onClick={()=>setPartIdx(Math.max(0,partIdx-1))} disabled={partIdx===0} style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:partIdx===0?T.muted:"#fff",cursor:partIdx===0?"default":"pointer",fontWeight:700,fontSize:16,opacity:partIdx===0?0.3:1}}>→ הקודם</button>
+        <button onClick={()=>setPartIdx(partIdx+1)} style={{flex:2,background:`linear-gradient(135deg,${selTopic?.cp||T.gold},${selTopic?.cs||"#FF8C00"})`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:16}}>{partIdx>=lessonParts.length-1?"✅ סיימתי ללמוד":"← הבא"}</button>
+      </div>
+    </div>;
+  }
+
+  // Quiz after learning
+  return<Quiz nav={nav} params={{topic:selTopic}} online={online}/>;
+}
+
+// ── MATCHING PAIRS GAME ─────────────────────
+function MatchingPairs({nav}) {
+  const PAIRS=[
+    {q:"אברהם",a:"אבי האומה"},
+    {q:"משה",a:"מנהיג יציאת מצרים"},
+    {q:"דוד",a:"כותב תהילים"},
+    {q:"שלמה",a:"בנה את המקדש"},
+    {q:"נח",a:"בנה את התיבה"},
+    {q:"יוסף",a:"פתר חלומות"},
+    {q:"אסתר",a:"מלכת פרס"},
+    {q:"רות",a:"סבתא של דוד"},
+    {q:"שמשון",a:"גיבור בעל כוח"},
+    {q:"יונה",a:"נבלע בדג"},
+    {q:"אליהו",a:"נלחם בנביאי הבעל"},
+    {q:"יהושע",a:"כבש את יריחו"},
+    {q:"דבורה",a:"שופטת ונביאה"},
+    {q:"ירמיהו",a:"נביא החורבן"},
+    {q:"דניאל",a:"שרד בגוב אריות"},
+    {q:"יעקב",a:"אבי 12 השבטים"},
+  ];
+  const [pairs]=useState(()=>Engine.shuffle([...PAIRS]).slice(0,6));
+  const [cards,setCards]=useState([]);
+  const [flipped,setFlipped]=useState([]);
+  const [matched,setMatched]=useState([]);
+  const [moves,setMoves]=useState(0);
+
+  useEffect(()=>{
+    const all=[];
+    pairs.forEach((p,i)=>{
+      all.push({id:`q${i}`,text:p.q,pairIdx:i,type:"q"});
+      all.push({id:`a${i}`,text:p.a,pairIdx:i,type:"a"});
+    });
+    setCards(Engine.shuffle(all));
+  },[]);
+
+  const tap=(card)=>{
+    if(matched.includes(card.pairIdx)||flipped.includes(card.id)||flipped.length>=2) return;
+    Audio.tap();
+    const newFlipped=[...flipped,card.id];
+    setFlipped(newFlipped);
+    if(newFlipped.length===2){
+      setMoves(m=>m+1);
+      const c1=cards.find(c=>c.id===newFlipped[0]);
+      const c2=cards.find(c=>c.id===newFlipped[1]);
+      if(c1.pairIdx===c2.pairIdx&&c1.type!==c2.type){
+        Audio.correct();Audio.vCorrect();
+        setTimeout(()=>{setMatched(m=>[...m,c1.pairIdx]);setFlipped([]);},400);
+      }else{
+        Audio.wrong();
+        setTimeout(()=>setFlipped([]),800);
+      }
+    }
+  };
+
+  const done=matched.length===pairs.length;
+
+  return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:18}}>🔗 התאם זוגות</h2><span style={{marginRight:"auto",fontSize:13,color:T.muted}}>צעדים: {moves}</span></div>
+    {done&&<Card style={{textAlign:"center",padding:"24px"}}>
+      <div style={{fontSize:48}}>🎉</div>
+      <h2 style={{color:T.gold,margin:"8px 0"}}>מצוין!</h2>
+      <div style={{color:T.muted}}>{moves} צעדים</div>
+      <Btn onClick={()=>nav("home")} style={{marginTop:12}}>🏠 חזרה</Btn>
+    </Card>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+      {cards.map(card=>{
+        const isFlipped=flipped.includes(card.id);
+        const isMatched=matched.includes(card.pairIdx);
+        return<button key={card.id} onClick={()=>tap(card)} style={{
+          padding:"16px 8px",borderRadius:T.r.md,minHeight:70,cursor:isMatched?"default":"pointer",
+          background:isMatched?"rgba(93,252,138,0.12)":isFlipped?"rgba(255,215,0,0.12)":"rgba(255,255,255,0.05)",
+          border:`2px solid ${isMatched?"rgba(93,252,138,0.4)":isFlipped?"rgba(255,215,0,0.4)":"rgba(255,255,255,0.1)"}`,
+          color:isMatched?T.success:isFlipped?"#fff":"rgba(255,255,255,0.6)",
+          fontSize:14,fontWeight:isFlipped||isMatched?700:400,textAlign:"center",transition:"all 0.2s",
+          opacity:isMatched?0.5:1,
+        }}>{isFlipped||isMatched?card.text:"?"}</button>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── DIALOGUE WITH BIBLICAL CHARACTER ────────
+function Dialogue({nav,online}) {
+  const CHARACTERS=[
+    {id:"moshe",name:"משה רבנו",emoji:"🔥",desc:"מנהיג יציאת מצרים",system:"את משה רבנו. דבר כמו משה — ענווה, חוכמה, ניסיון של 40 שנה במדבר. ספר על חוויותיך: הסנה הבוער, עשר המכות, קריעת הים, מתן תורה, 40 שנה במדבר."},
+    {id:"david",name:"דוד המלך",emoji:"👑",desc:"מלך ומשורר",system:"את דוד המלך. דבר כמו דוד — אומץ, אמונה, אהבת מוזיקה. ספר על: הקרב עם גוליית, הבריחה משאול, כיבוש ירושלים, כתיבת תהילים."},
+    {id:"esther",name:"אסתר המלכה",emoji:"👸",desc:"הצילה את עמה",system:"את אסתר המלכה. דברי כמו אסתר — אומץ, חכמה, מסירות. ספרי על: החיים בארמון, הסתרת הזהות, העמידה מול המן, הצלת העם."},
+    {id:"yona",name:"יונה הנביא",emoji:"🐋",desc:"נביא שברח",system:"את יונה הנביא. דבר כמו יונה — מתלבט, ישר, למד שיעור. ספר על: הבריחה מה', הסערה, הדג, נינוה, הקיקיון."},
+    {id:"rut",name:"רות",emoji:"🌾",desc:"נאמנות ואהבה",system:"את רות המואבייה. דברי כמו רות — נאמנות, צניעות, אומץ. ספרי על: ההחלטה ללכת עם נעמי, הלקט בשדות בועז, ההצטרפות לעם ישראל."},
+    {id:"shimshon",name:"שמשון",emoji:"💪",desc:"גיבור בעל כוח",system:"את שמשון הגיבור. דבר כמו שמשון — כוח, בטחון, גם טעויות. ספר על: הכוח שבשער, השועלים, דלילה, מקדש דגון."},
+  ];
+
+  const [char,setChar]=useState(null);
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  const send=async()=>{
+    if(!input.trim()||loading||!char) return;
+    const userMsg=input.trim();
+    setInput("");
+    setMessages(m=>[...m,{role:"user",text:userMsg}]);
+    setLoading(true);
+    const history=messages.map(m=>`${m.role==="user"?"לייה":char.name}: ${m.text}`).join("\n");
+    const prompt=`${char.system}
+לייה היא ילדה בת 10 שלומדת תנ"ך. דבר/י איתה בשפה פשוטה וחמה. 2-3 משפטים.
+${history?`היסטוריה:\n${history}\n`:""}
+לייה: ${userMsg}
+${char.name}:`;
+    try{
+      const reply=await callClaude(prompt,200);
+      setMessages(m=>[...m,{role:"char",text:reply}]);
+    }catch{
+      setMessages(m=>[...m,{role:"char",text:"סליחה, לא הצלחתי לענות כרגע..."}]);
+    }
+    setLoading(false);
+  };
+
+  if(!char) return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>💬 דבר עם דמות תנ״כית</h2></div>
+    <Card style={{padding:T.p.md,textAlign:"center",marginBottom:14}}>
+      <div style={{fontSize:16,color:"rgba(255,255,255,0.7)",lineHeight:1.7}}>בחרי דמות מהתנ"ך ושאלי אותה שאלות!<br/>הדמות תענה כאילו היא באמת שם 🌟</div>
+    </Card>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      {CHARACTERS.map(c=><button key={c.id} onClick={()=>{setChar(c);setMessages([{role:"char",text:`שלום לייה! אני ${c.name}. מה תרצי לדעת?`}]);}} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,borderRadius:T.r.lg,padding:"18px 12px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+        <div style={{fontSize:36}}>{c.emoji}</div>
+        <div style={{fontWeight:700,fontSize:15,marginTop:6}}>{c.name}</div>
+        <div style={{fontSize:11,color:T.muted,marginTop:3}}>{c.desc}</div>
+      </button>)}
+    </div>
+  </div>;
+
+  return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+      <BackBtn onClick={()=>setChar(null)}/>
+      <div style={{fontSize:28}}>{char.emoji}</div>
+      <h2 style={{margin:0,fontSize:18}}>{char.name}</h2>
+    </div>
+    <div style={{minHeight:300,marginBottom:14}}>
+      {messages.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-start":"flex-end",marginBottom:10}}>
+        <div style={{maxWidth:"80%",padding:"12px 16px",borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",background:m.role==="user"?"rgba(255,215,0,0.1)":"rgba(255,255,255,0.07)",border:`1px solid ${m.role==="user"?"rgba(255,215,0,0.25)":"rgba(255,255,255,0.1)"}`,fontSize:15,lineHeight:1.7,color:"#fff"}}>
+          {m.text}
+        </div>
+      </div>)}
+      {loading&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><div style={{padding:"12px 16px",borderRadius:18,background:"rgba(255,255,255,0.05)",color:T.muted,animation:"pulse 1.2s infinite",fontSize:14}}>{char.emoji} חושב...</div></div>}
+    </div>
+    <div style={{display:"flex",gap:8,position:"sticky",bottom:60}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} dir="rtl" placeholder={`שאלי את ${char.name}...`} style={{flex:1,padding:"14px 16px",background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,color:"#fff",fontSize:16,outline:"none"}}/>
+      <button onClick={send} disabled={loading} style={{background:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px 20px",color:"#1a0533",fontWeight:700,cursor:"pointer",fontSize:15}}>שלח</button>
+    </div>
+  </div>;
+}
+
 function FillBlank({nav,online}) {
   const {state,dispatch}=useS();
   const [questions,setQuestions]=useState([]);
@@ -2400,7 +2645,7 @@ const SCREENS = {
   daily:DailyChallenge, aigen:AIGenerator, tutor:Tutor,
   map:VisualMap, stats:Stats, achievements:Achievements,
   glossary:Glossary, parent:Parent, summary:ParentSummary, teacher:TeacherDash,
-  fillblank:FillBlank, scramble:WordScramble,
+  fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
 };
 
 function Router() {
