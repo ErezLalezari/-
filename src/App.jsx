@@ -683,7 +683,7 @@ function useOnline() {
 }
 
 // Claude API wrapper
-const GEMINI_KEY = "AIzaSyCGqZy6gehIOVGsJhhGJwF3a6qM1rbklpo";
+const GEMINI_KEY = "AIzaSyB9DU0apcLh6aO8WeZlkQ00PtDAJfFLYxE";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
 const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמדת ילדה בת 10 בשם לייה.
 הכללים שלך:
