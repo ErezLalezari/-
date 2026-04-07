@@ -1815,8 +1815,8 @@ function FeedbackBtn({screen}){
     setLoading(false);
   };
   if(!supabase)return null;
-  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:20,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:44,height:44,fontSize:20,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
-  {open&&<div style={{position:'fixed',bottom:72,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
+  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:72,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:40,height:40,fontSize:18,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
+  {open&&<div style={{position:'fixed',bottom:120,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
     <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:'#FFD700'}}>💬 ספרי לנו</div>
     {sent?<div style={{color:'#5DFC8A',textAlign:'center'}}>נשלח תודה</div>:<>
       <textarea value={text} onChange={e=>setText(e.target.value)} placeholder='מה לא עבד? מה אפשר לשפר?' dir='rtl' rows={3} style={{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:'10px 12px',color:'#fff',fontSize:14,resize:'none',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
@@ -2834,7 +2834,7 @@ function TabProfile({nav}) {
       <button onClick={()=>dispatch({type:"TOGGLE_AUDIO"})} style={{flex:1,padding:"12px",background:state.audioOn?"rgba(69,183,209,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${state.audioOn?"rgba(69,183,209,0.3)":T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:state.audioOn?"#45B7D1":T.muted,fontSize:13,fontWeight:700}}>🔊 {state.audioOn?"קול פעיל":"קול כבוי"}</button>
       <button onClick={()=>nav("summary")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:T.muted,fontSize:13,fontWeight:700}}>📊 סיכום מלא</button>
     </div>
-    <button onClick={()=>{localStorage.removeItem("leya_app");window.location.reload();}} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.08)`,borderRadius:T.r.sm,cursor:"pointer",color:"rgba(255,255,255,0.3)",fontSize:13,marginTop:4}}>🏠 חזרה לבחירת אפליקציות</button>
+    <button onClick={()=>nav("__launcher__")} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.08)`,borderRadius:T.r.sm,cursor:"pointer",color:"rgba(255,255,255,0.3)",fontSize:13,marginTop:4}}>🏠 חזרה לבחירת אפליקציות</button>
   </div>;
 }
 
@@ -2856,9 +2856,10 @@ function Router({onLauncher}) {
 
   const nav=useCallback((screen,params={})=>{
     if(screen==="home"){setSubScreen(null);setTab("home");return;}
+    if(screen==="__launcher__"&&onLauncher){onLauncher();return;}
     setSubScreen({screen,params});
     window.scrollTo({top:0});
-  },[]);
+  },[onLauncher]);
 
   const goBack=useCallback(()=>{setSubScreen(null);},[]);
 
@@ -2886,8 +2887,8 @@ function Router({onLauncher}) {
     <div style={{flex:1,overflow:isSubScreen?"auto":"hidden",padding:"12px 14px",position:"relative",zIndex:1}}>
       {isSubScreen
         ?<><SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
-          {/* Floating home button on sub-screens */}
-          <button onClick={goBack} style={{position:"fixed",top:12,right:12,width:44,height:44,borderRadius:22,background:"rgba(10,8,24,0.92)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕</button>
+          {/* Floating back button on sub-screens */}
+          <button onClick={goBack} style={{position:"fixed",top:10,right:10,height:40,borderRadius:20,background:"rgba(10,8,24,0.95)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"0 14px 0 10px",fontSize:14,fontWeight:700,color:T.gold,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕ חזרה</button>
         </>
         :TAB_SCREENS[tab]
           ?React.createElement(TAB_SCREENS[tab],{nav,online})
@@ -2962,9 +2963,9 @@ function Launcher({onSelect}) {
 }
 
 export default function App(){
-  const [app,setApp]=useState(()=>localStorage.getItem("leya_app")||null);
-  const selectApp=(id)=>{localStorage.setItem("leya_app",id);setApp(id);};
-  const goLauncher=()=>{localStorage.removeItem("leya_app");setApp(null);};
+  const [app,setApp]=useState(null);
+  const selectApp=(id)=>{setApp(id);};
+  const goLauncher=()=>{setApp(null);};
 
   // Direct URL params skip launcher
   const urlScreen=new URLSearchParams(window.location.search).get("screen");

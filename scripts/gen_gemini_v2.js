@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-const GEMINI_KEY = "AIzaSyB9DU0apcLh6aO8WeZlkQ00PtDAJfFLYxE";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+const PROXY_URL = "https://mibqnkhvbgoavwamhmnp.supabase.co/functions/v1/ai-proxy";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA";
 
 const TOPICS = [
   {id:"bereshit",name:"בראשית"},{id:"shemot",name:"שמות"},{id:"bamidbar",name:"במדבר"},
@@ -16,17 +16,14 @@ const BATCH_SIZE = 10; // questions per API call
 const CALLS_PER_TOPIC = parseInt(process.argv[3] || "3"); // 3 calls × 10 = 30 per topic
 
 async function callGemini(prompt) {
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch(PROXY_URL, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      contents: [{parts: [{text: prompt}]}],
-      generationConfig: {maxOutputTokens: 4096, temperature: 0.85}
-    })
+    headers: {"Content-Type": "application/json", "Authorization": `Bearer ${ANON_KEY}`},
+    body: JSON.stringify({prompt, maxTokens: 4096})
   });
   const d = await res.json();
-  if (d.error) { console.error("  API error:", d.error.message); return []; }
-  const raw = d.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (d.error) { console.error("  API error:", d.error); return []; }
+  const raw = d.text || "";
   try {
     // Remove markdown code fences and any thinking tags
     let clean = raw.replace(/```json/g, "").replace(/```/g, "").trim();

@@ -1,6 +1,6 @@
 {
-  "short_name": "חידון תנ״ך",
-  "name": "חידון התנ״ך של לייה",
+  "short_name": "לייה",
+  "name": "האפליקציה של לייה",
   "start_url": "/",
   "display": "standalone",
   "theme_color": "#FFD700",
