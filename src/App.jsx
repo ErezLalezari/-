@@ -1181,9 +1181,10 @@ function DailyChallenge({nav}) {
   const [expl,setExpl]=useState("");
   const [loading,setLoading]=useState(false);
   const [confetti,setConfetti]=useState([]);
+  const [answeredLocal,setAnsweredLocal]=useState(false);
   const done=Engine.isDailyDone(state.lastDaily);
 
-  if(done)return <div>
+  if(done&&!answeredLocal&&!sel)return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📅 אתגר יומי</h2></div>
     <Card style={{textAlign:"center",padding:"40px 20px",borderColor:`${T.success}44`}}>
       <div style={{fontSize:64}}>🎉</div>
@@ -1202,6 +1203,7 @@ function DailyChallenge({nav}) {
 
   const handleAnswer=async(opt)=>{
     if(isAnswered)return;
+    setAnsweredLocal(true);
     Audio.tap(); setSel(opt);
     const ok=opt===qShuffled.a;
     if(ok){Audio.correct();Audio.vCorrect();burst();}
@@ -2888,7 +2890,7 @@ function Router() {
       {isSubScreen
         ?<><SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
           {/* Floating home button on sub-screens */}
-          <button onClick={goBack} style={{position:"fixed",bottom:16,left:16,width:52,height:52,borderRadius:26,background:"rgba(10,8,24,0.9)",border:"2px solid rgba(255,215,0,0.4)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,zIndex:9000,boxShadow:"0 4px 20px rgba(0,0,0,0.5)"}}>🏠</button>
+          <button onClick={goBack} style={{position:"fixed",top:12,right:12,width:44,height:44,borderRadius:22,background:"rgba(10,8,24,0.92)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕</button>
         </>
         :TAB_SCREENS[tab]
           ?React.createElement(TAB_SCREENS[tab],{nav,online})
