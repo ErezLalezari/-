@@ -683,13 +683,29 @@ function useOnline() {
 }
 
 // Claude API wrapper
-async function callClaude(prompt, maxTokens=400) {
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
+const GEMINI_KEY = "AIzaSyCGqZy6gehIOVGsJhhGJwF3a6qM1rbklpo";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמדת ילדה בת 10 בשם לייה.
+הכללים שלך:
+- דברי בעברית פשוטה וחמה, כמו מורה אהובה
+- כשמסבירים פסוקים, תמיד תרגמי מילים קשות בסוגריים
+- תשובות קצרות (2-4 משפטים) אלא אם התבקשת להרחיב
+- עודדי את לייה כשהיא צודקת, ותסבירי בסבלנות כשהיא טועה
+- אל תגלי תשובות כשלייה מבקשת עזרה — רק תני רמזים וכיוון
+- השתמשי באמוג'ים בצמצום כדי לשמור על חמימות
+- את מכירה את כל 24 ספרי התנ"ך לעומק`;
+
+async function callAI(prompt, maxTokens=400) {
+  const res = await fetch(GEMINI_URL, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages:[{role:"user",content:prompt}]})
+    body:JSON.stringify({
+      system_instruction:{parts:[{text:AI_SYSTEM}]},
+      contents:[{parts:[{text:prompt}]}],
+      generationConfig:{maxOutputTokens:maxTokens,temperature:0.7}
+    })
   });
   const d = await res.json();
-  return d.content?.[0]?.text||"";
+  return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
 }
 
 // Personal Helper — clarify a question or word
@@ -698,7 +714,7 @@ async function askHelper(question, context) {
 היא שואלת: "${question}"
 ההקשר: שאלת החידון היא "${context}"
 ענה בעברית פשוטה, 2-3 משפטים קצרים. אל תגלה את התשובה! רק עזור להבין את השאלה.`;
-  try { return await callClaude(prompt,200); } catch(e) { return "לא הצלחתי לעזור כרגע, נסי שוב"; }
+  try { return await callAI(prompt,200); } catch(e) { return "לא הצלחתי לעזור כרגע, נסי שוב"; }
 }
 
 // Generate variation of a question (for review mode)
@@ -709,7 +725,7 @@ async function generateVariation(originalQ, topicName) {
 לילדה בת 10. פורמט JSON בלבד:
 {"q":"שאלה חדשה","a":"תשובה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז","exp":"הסבר"}`;
   try {
-    const raw = await callClaude(prompt,300);
+    const raw = await callAI(prompt,300);
     const parsed = JSON.parse(raw.replace(/```json|```/g,"").trim());
     if (!parsed.q||!parsed.a||!parsed.o) return null;
     return {id:`var_${Date.now()}`,type:Q.MULTIPLE,...parsed,isVariation:true};
@@ -722,7 +738,7 @@ async function explainAnswer({q,correct,userAnswer,isCorrect,isOpen}) {
   const prompt = isCorrect
     ? `ענתה נכון על שאלת תנ"ך: "${q.q}". כתבי משפט עידוד קצר לילדה בת 10.`
     : `שאלת תנ"ך לילדה בת 10: "${q.q}". ענתה: "${userAnswer}". נכון: "${ca}". הסבר ב-2 משפטים פשוטים: מה נכון ולמה. אם יש מילה קשה הסבר בסוגריים.`;
-  try { return await callClaude(prompt,200); } catch(e) { return isCorrect ? `✅ ${q.exp}` : `💡 ${ca}. ${q.exp}`; }
+  try { return await callAI(prompt,200); } catch(e) { return isCorrect ? `✅ ${q.exp}` : `💡 ${ca}. ${q.exp}`; }
 }
 
 // Generate new AI question for topic
@@ -735,7 +751,7 @@ ${wrongHint}
 {"q":"השאלה","a":"התשובה הנכונה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז קצר","exp":"הסבר קצר"}
 הכנס את התשובה הנכונה באחת מ-4 האפשרויות. ללא טקסט נוסף.`;
   try {
-    const raw = await callClaude(prompt,300);
+    const raw = await callAI(prompt,300);
     const clean = raw.replace(/```json|```/g,"").trim();
     const parsed = JSON.parse(clean);
     if (!parsed.q||!parsed.a||!parsed.o) return null;
@@ -749,7 +765,7 @@ async function tutorChat(userMessage, context="") {
 ${context ? `הקשר: ${context}` : ""}
 שאלת הילדה: "${userMessage}"
 ענה בעברית פשוטה, קצר (2-4 משפטים), חם ומעניין. אל תסביר יותר מדי.`;
-  try { return await callClaude(prompt,400); }
+  try { return await callAI(prompt,400); }
   catch { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
 }
 
@@ -1194,8 +1210,9 @@ function DailyChallenge({nav}) {
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:false});
     logQuizResult(q.id, q.topic||"daily", ok, false, 0);
     setLoading(true);
-    const e=await explainAnswer({q:qShuffled,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>ok?`✅ ${q.exp}`:`💡 ${q.a}. ${q.exp}`);
-    setExpl(e||"");setLoading(false);
+    const fallback=ok?`✅ ${q.exp}`:`💡 התשובה הנכונה: ${q.a}. ${q.exp}`;
+    const e=await explainAnswer({q:qShuffled,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>fallback);
+    setExpl(e||fallback);setLoading(false);
   };
 
   return <div style={{position:"relative"}}>
@@ -2147,7 +2164,7 @@ function StudyMode({nav,online}) {
 פורמט JSON בלבד:
 [{"title":"כותרת","text":"הסבר","verse":"פסוק (אופציונלי)"}]`;
     try{
-      const raw=await callClaude(prompt,600);
+      const raw=await callAI(prompt,600);
       const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
       if(Array.isArray(parsed)&&parsed.length>0) setLessonParts(parsed);
       else setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
@@ -2206,22 +2223,16 @@ function StudyMode({nav,online}) {
 // ── MATCHING PAIRS GAME ─────────────────────
 function MatchingPairs({nav}) {
   const PAIRS=[
-    {q:"אברהם",a:"אבי האומה"},
-    {q:"משה",a:"מנהיג יציאת מצרים"},
-    {q:"דוד",a:"כותב תהילים"},
-    {q:"שלמה",a:"בנה את המקדש"},
-    {q:"נח",a:"בנה את התיבה"},
-    {q:"יוסף",a:"פתר חלומות"},
-    {q:"אסתר",a:"מלכת פרס"},
-    {q:"רות",a:"סבתא של דוד"},
-    {q:"שמשון",a:"גיבור בעל כוח"},
-    {q:"יונה",a:"נבלע בדג"},
-    {q:"אליהו",a:"נלחם בנביאי הבעל"},
-    {q:"יהושע",a:"כבש את יריחו"},
-    {q:"דבורה",a:"שופטת ונביאה"},
-    {q:"ירמיהו",a:"נביא החורבן"},
-    {q:"דניאל",a:"שרד בגוב אריות"},
-    {q:"יעקב",a:"אבי 12 השבטים"},
+    {q:"אברהם",a:"אבי האומה"},{q:"משה",a:"יציאת מצרים"},{q:"דוד",a:"כותב תהילים"},
+    {q:"שלמה",a:"בנה המקדש"},{q:"נח",a:"בנה התיבה"},{q:"יוסף",a:"פתר חלומות"},
+    {q:"אסתר",a:"מלכת פרס"},{q:"רות",a:"סבתא דוד"},{q:"שמשון",a:"כוח עצום"},
+    {q:"יונה",a:"נבלע בדג"},{q:"אליהו",a:"הר הכרמל"},{q:"יהושע",a:"כבש יריחו"},
+    {q:"דבורה",a:"שופטת"},{q:"ירמיהו",a:"נביא החורבן"},{q:"דניאל",a:"גוב אריות"},
+    {q:"יעקב",a:"12 שבטים"},{q:"שרה",a:"אם יצחק"},{q:"רבקה",a:"אם יעקב"},
+    {q:"רחל",a:"אם יוסף"},{q:"חנה",a:"אם שמואל"},{q:"מרים",a:"אחות משה"},
+    {q:"אהרן",a:"כוהן גדול"},{q:"גדעון",a:"300 לוחמים"},{q:"שאול",a:"מלך ראשון"},
+    {q:"המן",a:"רשע פורים"},{q:"מרדכי",a:"דוד אסתר"},{q:"בועז",a:"בעל רות"},
+    {q:"כורש",a:"שיבת ציון"},{q:"נחמיה",a:"חומת ירושלים"},{q:"עזרא",a:"סופר תורה"},
   ];
   const [pairs]=useState(()=>Engine.shuffle([...PAIRS]).slice(0,6));
   const [cards,setCards]=useState([]);
@@ -2313,7 +2324,7 @@ ${history?`היסטוריה:\n${history}\n`:""}
 לייה: ${userMsg}
 ${char.name}:`;
     try{
-      const reply=await callClaude(prompt,200);
+      const reply=await callAI(prompt,200);
       setMessages(m=>[...m,{role:"char",text:reply}]);
     }catch{
       setMessages(m=>[...m,{role:"char",text:"סליחה, לא הצלחתי לענות כרגע..."}]);
@@ -2379,7 +2390,7 @@ function FillBlank({nav,online}) {
       const results=[];
       for(const p of prompts){
         try{
-          const raw=await callClaude(p.prompt,200);
+          const raw=await callAI(p.prompt,200);
           const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
           if(parsed.sentence&&parsed.answer) results.push({...parsed,topic:p.topic});
         }catch{}
@@ -2446,21 +2457,26 @@ function FillBlank({nav,online}) {
 function WordScramble({nav}) {
   const [questions]=useState(()=>{
     const pool=[
-      {word:"אברהם",hint:"האב הראשון",topic:"bereshit"},
-      {word:"משה",hint:"מנהיג יציאת מצרים",topic:"shemot"},
-      {word:"ירושלים",hint:"עיר הקודש",topic:"yehoshua"},
-      {word:"שמשון",hint:"גיבור בעל כוח עצום",topic:"shoftim"},
-      {word:"דבורה",hint:"שופטת ונביאה",topic:"shoftim"},
-      {word:"גוליית",hint:"ענק פלשתי",topic:"shmuel"},
-      {word:"שלמה",hint:"המלך החכם ביותר",topic:"melachim_a"},
-      {word:"אסתר",hint:"מלכת פרס שהצילה את עמה",topic:"esther"},
-      {word:"יונה",hint:"נביא שבלע דג",topic:"yona"},
-      {word:"נחמיה",hint:"בנה את חומות ירושלים",topic:"nechemya"},
-      {word:"דניאל",hint:"שרד בגוב אריות",topic:"daniel"},
-      {word:"רבקה",hint:"אשת יצחק",topic:"bereshit"},
-      {word:"יהושע",hint:"כובש הארץ",topic:"yehoshua"},
-      {word:"ירמיהו",hint:"נביא החורבן",topic:"yirmiyahu"},
-      {word:"בועז",hint:"בעלה של רות",topic:"rut"},
+      {word:"אברהם",hint:"האב הראשון"},{word:"משה",hint:"מנהיג יציאת מצרים"},
+      {word:"שמשון",hint:"גיבור בעל כוח"},{word:"דבורה",hint:"שופטת ונביאה"},
+      {word:"גוליית",hint:"ענק פלשתי"},{word:"שלמה",hint:"המלך החכם"},
+      {word:"אסתר",hint:"הצילה את עמה"},{word:"יונה",hint:"נבלע בדג"},
+      {word:"נחמיה",hint:"בנה חומות"},{word:"דניאל",hint:"בגוב אריות"},
+      {word:"רבקה",hint:"אשת יצחק"},{word:"יהושע",hint:"כבש את הארץ"},
+      {word:"ירמיהו",hint:"נביא החורבן"},{word:"בועז",hint:"בעל רות"},
+      {word:"יעקב",hint:"אבי 12 השבטים"},{word:"יוסף",hint:"פתר חלומות"},
+      {word:"שאול",hint:"המלך הראשון"},{word:"אהרן",hint:"הכוהן הגדול"},
+      {word:"מרים",hint:"אחות משה"},{word:"רחל",hint:"אמו של יוסף"},
+      {word:"נעמי",hint:"חמותה של רות"},{word:"חנה",hint:"אמו של שמואל"},
+      {word:"אליהו",hint:"עלה בסערה"},{word:"אלישע",hint:"תלמיד אליהו"},
+      {word:"גדעון",hint:"ניצח עם 300"},{word:"יפתח",hint:"נדר נדר טראגי"},
+      {word:"עשו",hint:"אחי יעקב הגדול"},{word:"ישמעאל",hint:"בן הגר"},
+      {word:"בנימין",hint:"הבן הקטן"},{word:"יהודה",hint:"שבט המלכות"},
+      {word:"כורש",hint:"התיר את השיבה"},{word:"המן",hint:"רשע פורים"},
+      {word:"מרדכי",hint:"דוד אסתר"},{word:"פרעה",hint:"מלך מצרים"},
+      {word:"דלילה",hint:"בגדה בשמשון"},{word:"יעל",hint:"הרגה את סיסרא"},
+      {word:"בלעם",hint:"רצה לקלל"},{word:"קורח",hint:"מרד במשה"},
+      {word:"צדקיהו",hint:"מלך אחרון"},{word:"חזקיהו",hint:"מלך צדיק"},
     ];
     return Engine.shuffle([...pool]).slice(0,7);
   });
@@ -2870,7 +2886,10 @@ function Router() {
     {/* Main content area */}
     <div style={{flex:1,overflow:isSubScreen?"auto":"hidden",padding:"12px 14px",position:"relative",zIndex:1}}>
       {isSubScreen
-        ?<SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
+        ?<><SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
+          {/* Floating home button on sub-screens */}
+          <button onClick={goBack} style={{position:"fixed",bottom:16,left:16,width:52,height:52,borderRadius:26,background:"rgba(10,8,24,0.9)",border:"2px solid rgba(255,215,0,0.4)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,zIndex:9000,boxShadow:"0 4px 20px rgba(0,0,0,0.5)"}}>🏠</button>
+        </>
         :TAB_SCREENS[tab]
           ?React.createElement(TAB_SCREENS[tab],{nav,online})
           :null
