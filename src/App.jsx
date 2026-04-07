@@ -2838,6 +2838,7 @@ function TabProfile({nav}) {
       <button onClick={()=>dispatch({type:"TOGGLE_AUDIO"})} style={{flex:1,padding:"12px",background:state.audioOn?"rgba(69,183,209,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${state.audioOn?"rgba(69,183,209,0.3)":T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:state.audioOn?"#45B7D1":T.muted,fontSize:13,fontWeight:700}}>🔊 {state.audioOn?"קול פעיל":"קול כבוי"}</button>
       <button onClick={()=>nav("summary")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:T.muted,fontSize:13,fontWeight:700}}>📊 סיכום מלא</button>
     </div>
+    <button onClick={()=>{localStorage.removeItem("leya_app");window.location.reload();}} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.08)`,borderRadius:T.r.sm,cursor:"pointer",color:"rgba(255,255,255,0.3)",fontSize:13,marginTop:4}}>🏠 חזרה לבחירת אפליקציות</button>
   </div>;
 }
 
@@ -2850,7 +2851,7 @@ const TABS=[
 ];
 const TAB_SCREENS={home:TabHome,learn:TabLearn,games:TabGames,profile:TabProfile};
 
-function Router() {
+function Router({onLauncher}) {
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
   const [splash,setSplash]=useState(()=>!initScreen&&!sessionStorage.getItem("v4"));
   const [tab,setTab]=useState("home");
@@ -2910,4 +2911,70 @@ function Router() {
   </div>;
 }
 
-export default function App(){return<Store><Router/></Store>;}
+// ── APP LAUNCHER ────────────────────────────
+const APPS = [
+  {id:"bible",name:"חידון התנ״ך",emoji:"📖",desc:"שאלות, משחקים ולמידה",color:"#FFD700",cs:"#FF8C00",ready:true},
+  {id:"gifted",name:"כיתת מחוננים",emoji:"🧠",desc:"הכנה לקבלה לכיתת מחוננים",color:"#00C9FF",cs:"#0088CC",ready:false,comingSoon:"בפיתוח! יעודכן בקרוב"},
+  {id:"math",name:"מתמטיקה",emoji:"🔢",desc:"תרגול חשבון וגיאומטריה",color:"#4ECDC4",cs:"#45B7D1",ready:false},
+  {id:"english",name:"אנגלית",emoji:"🇬🇧",desc:"אוצר מילים ודקדוק",color:"#C3A6FF",cs:"#9B59B6",ready:false},
+  {id:"science",name:"מדעים",emoji:"🔬",desc:"ניסויים וגילויים",color:"#FF6B6B",cs:"#FF8E53",ready:false},
+  {id:"reading",name:"קריאה",emoji:"📚",desc:"סיפורים ואוצר מילים",color:"#FF85A1",cs:"#E91E8C",ready:false},
+];
+
+function Launcher({onSelect}) {
+  const hour=new Date().getHours();
+  const greeting=hour<12?"בוקר טוב":hour<17?"צהריים טובים":hour<21?"ערב טוב":"לילה טוב";
+
+  return <div style={{minHeight:"100dvh",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",display:"flex",flexDirection:"column",padding:"0 16px env(safe-area-inset-bottom,16px)"}}>
+    <style>{`
+      *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+      html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#0a0818;}
+      @keyframes floatSlow{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+      @keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    `}</style>
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,pointerEvents:"none",background:"radial-gradient(ellipse at 30% 20%,rgba(255,215,0,0.06) 0%,transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(78,205,196,0.04) 0%,transparent 50%)"}}/>
+
+    {/* Header */}
+    <div style={{textAlign:"center",padding:"32px 0 8px",position:"relative",zIndex:1}}>
+      <div style={{fontSize:52,animation:"floatSlow 3s ease-in-out infinite"}}>👋</div>
+      <h1 style={{fontSize:28,fontWeight:900,margin:"8px 0 4px",color:"#fff"}}>{greeting}, לייה!</h1>
+      <p style={{fontSize:16,color:"rgba(255,255,255,0.5)",margin:0}}>מה נלמד היום?</p>
+    </div>
+
+    {/* App grid */}
+    <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"20px 0",alignContent:"start",position:"relative",zIndex:1}}>
+      {APPS.map((app,i)=><button key={app.id} onClick={()=>app.ready&&onSelect(app.id)} style={{
+        background:app.ready?`linear-gradient(145deg,${app.color}18,${app.color}08)`:"rgba(255,255,255,0.02)",
+        border:`2px solid ${app.ready?app.color+"44":"rgba(255,255,255,0.06)"}`,
+        borderRadius:20,padding:"24px 14px",cursor:app.ready?"pointer":"default",
+        textAlign:"center",color:"#fff",position:"relative",overflow:"hidden",
+        animation:`fadeIn 0.4s ${i*0.08}s ease both`,
+        opacity:app.ready?1:0.4,
+      }}>
+        <div style={{fontSize:44,marginBottom:8}}>{app.emoji}</div>
+        <div style={{fontWeight:800,fontSize:18,color:app.ready?app.color:"rgba(255,255,255,0.4)"}}>{app.name}</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:4,lineHeight:1.4}}>{app.ready?app.desc:(app.comingSoon||"בקרוב...")}</div>
+        {!app.ready&&<div style={{position:"absolute",top:8,left:8,background:"rgba(255,255,255,0.08)",borderRadius:8,padding:"2px 8px",fontSize:10,color:"rgba(255,255,255,0.3)"}}>🔒</div>}
+      </button>)}
+    </div>
+
+    {/* Footer */}
+    <div style={{textAlign:"center",padding:"8px 0 16px",position:"relative",zIndex:1}}>
+      <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>Leya's Learning Hub ✨</div>
+    </div>
+  </div>;
+}
+
+export default function App(){
+  const [app,setApp]=useState(()=>localStorage.getItem("leya_app")||null);
+  const selectApp=(id)=>{localStorage.setItem("leya_app",id);setApp(id);};
+  const goLauncher=()=>{localStorage.removeItem("leya_app");setApp(null);};
+
+  // Direct URL params skip launcher
+  const urlScreen=new URLSearchParams(window.location.search).get("screen");
+  if(urlScreen) return<Store><Router/></Store>;
+
+  if(!app) return<Launcher onSelect={selectApp}/>;
+  if(app==="bible") return<Store><Router onLauncher={goLauncher}/></Store>;
+  return<Launcher onSelect={selectApp}/>;
+}
