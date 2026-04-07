@@ -13,7 +13,7 @@
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
-import {
+import React, {
   useState, useEffect, useCallback, useReducer,
   createContext, useContext, useRef, useMemo
 } from "react";
@@ -1521,7 +1521,7 @@ function Quiz({nav,params,online}) {
   const optState=(opt)=>{ if(!answered)return"default"; if(opt===q.a)return"correct"; if(opt===sel)return"wrong"; return"default"; };
   const tc=topic?.cp||"#C3A6FF";
 
-  return <div style={{position:"relative"}}>
+  return <div style={{position:"relative",display:"flex",flexDirection:"column",minHeight:"100%"}}>
     {flash&&<div style={{position:"fixed",inset:0,zIndex:8000,pointerEvents:"none",background:flash==="green"?"rgba(93,252,138,0.14)":"rgba(255,107,107,0.17)",animation:"flashFade 0.4s ease forwards"}}/>}
     {confetti.map(p=><div key={p.id} style={{position:"fixed",top:"30%",left:`${p.x}%`,width:p.s,height:p.s,background:p.c,borderRadius:3,zIndex:8888,pointerEvents:"none",animation:`confettiFall 1.6s ${p.d}s ease-out forwards`,transform:`rotate(${p.r}deg)`}}/>)}
     <AchPopup achs={achs} onClose={()=>setAchs([])}/>
@@ -2648,37 +2648,244 @@ const SCREENS = {
   fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
 };
 
+// ── TAB: HOME ───────────────────────────────
+function TabHome({nav}) {
+  const {state,dispatch}=useS();
+  const pct=state.total>0?Math.round(state.correct/state.total*100):0;
+  const dailyDone=Engine.isDailyDone(state.lastDaily);
+  const wrongCount=Object.values(state.cards).filter(r=>r.tc===0&&r.seen).length;
+  const mastered=Object.values(state.cards).filter(r=>r.tc>=4).length;
+  const totalQ=Object.values(DB).reduce((s,a)=>s+a.length,0);
+
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:12}}>
+    {/* Compact hero */}
+    <div style={{textAlign:"center",padding:"8px 0 0"}}>
+      <h1 style={{fontSize:24,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>שלום {state.name}! 🌟</h1>
+    </div>
+
+    {/* Stats row */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,padding:"12px 8px"}}>
+      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{state.correct}</div><div style={{fontSize:10,color:T.muted}}>נכון</div></div>
+      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#FF6B6B"}}>{state.streak}🔥</div><div style={{fontSize:10,color:T.muted}}>ימים</div></div>
+      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#4ECDC4"}}>{pct}%</div><div style={{fontSize:10,color:T.muted}}>הצלחה</div></div>
+      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:T.success}}>{mastered}</div><div style={{fontSize:10,color:T.muted}}>שולטת</div></div>
+    </div>
+
+    {/* Daily challenge — big CTA */}
+    <button onClick={()=>!dailyDone&&nav("daily")} style={{background:dailyDone?"rgba(93,252,138,0.1)":`linear-gradient(135deg,${T.gold}18,${T.gold}08)`,border:`2px solid ${dailyDone?T.success+"55":T.gold+"55"}`,borderRadius:T.r.lg,padding:"20px",cursor:dailyDone?"default":"pointer",display:"flex",alignItems:"center",gap:16,minHeight:80}}>
+      <div style={{fontSize:44}}>{dailyDone?"✅":"📅"}</div>
+      <div style={{textAlign:"right",flex:1}}>
+        <div style={{fontWeight:800,fontSize:20,color:dailyDone?T.success:T.gold}}>{dailyDone?"אתגר יומי הושלם!":"אתגר יומי"}</div>
+        <div style={{fontSize:14,color:T.muted,marginTop:2}}>{dailyDone?`רצף: ${state.streak} ימים 🔥`:"שאלה אחת ביום — שמרי על הרצף!"}</div>
+      </div>
+    </button>
+
+    {/* Quick actions grid */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flex:1}}>
+      {wrongCount>0&&<button onClick={()=>{dispatch({type:"START",topic:null,mode:MODE.REVIEW});nav("quiz",{mode:MODE.REVIEW});}} style={{background:"rgba(195,166,255,0.08)",border:"1.5px solid rgba(195,166,255,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
+        <div style={{fontSize:28}}>🔄</div>
+        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:"#C3A6FF"}}>חזרה</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:2}}>{wrongCount} טעויות</div>
+      </button>}
+      <button onClick={()=>nav("study")} style={{background:"rgba(93,252,138,0.08)",border:"1.5px solid rgba(93,252,138,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
+        <div style={{fontSize:28}}>📚</div>
+        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:T.success}}>מצב לימוד</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:2}}>למד ← תרגל</div>
+      </button>
+      <button onClick={()=>nav("tutor")} style={{background:"rgba(0,201,255,0.08)",border:"1.5px solid rgba(0,201,255,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
+        <div style={{fontSize:28}}>🤖</div>
+        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:"#00C9FF"}}>מורה AI</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:2}}>שאלי כל דבר</div>
+      </button>
+      <button onClick={()=>nav("quiz",{mode:MODE.EXAM})} style={{background:"rgba(255,215,0,0.08)",border:"1.5px solid rgba(255,215,0,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
+        <div style={{fontSize:28}}>🎓</div>
+        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:T.gold}}>מבחן</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:2}}>טיימר 30 שניות</div>
+      </button>
+    </div>
+
+    {/* Progress bar */}
+    <div style={{padding:"4px 0"}}>
+      <Bar value={Object.keys(state.cards).length} max={totalQ} color="#4ECDC4" height={6}/>
+      <div style={{textAlign:"center",fontSize:11,color:T.muted,marginTop:3}}>{Object.keys(state.cards).length}/{totalQ} שאלות</div>
+    </div>
+  </div>;
+}
+
+// ── TAB: LEARN ──────────────────────────────
+function TabLearn({nav}) {
+  const {state,dispatch}=useS();
+  return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+    <h2 style={{margin:"0 0 12px",fontSize:18,fontWeight:800,color:"#fff"}}>📖 בחרי ספר</h2>
+    <div style={{flex:1,overflowY:"auto",paddingBottom:8}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {TOPICS.map(topic=>{
+          const ts=state.topics?.[topic.id];
+          const pct=ts?Math.round(ts.correct/ts.total*100):0;
+          const hasProgress=ts&&ts.total>0;
+          return <button key={topic.id} onClick={()=>nav("intro",{topic})} style={{background:"rgba(255,255,255,0.04)",border:`1.5px solid ${hasProgress?(pct>=70?"rgba(93,252,138,0.3)":"rgba(255,215,0,0.3)"):"rgba(255,255,255,0.1)"}`,borderRadius:T.r.md,padding:"14px 6px",cursor:"pointer",textAlign:"center",color:"#fff",position:"relative"}}>
+            <div style={{fontSize:28}}>{topic.emoji}</div>
+            <div style={{fontWeight:700,fontSize:12,marginTop:4,lineHeight:1.3}}>{topic.name}</div>
+            {hasProgress&&<div style={{marginTop:4}}><div style={{height:3,borderRadius:2,background:"rgba(255,255,255,0.1)",overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,borderRadius:2,background:pct>=70?T.success:pct>=50?T.gold:T.danger}}/></div><div style={{fontSize:9,color:T.muted,marginTop:2}}>{pct}%</div></div>}
+          </button>;
+        })}
+        <button onClick={()=>nav("quiz",{topic:MIXED_TOPIC})} style={{background:"rgba(195,166,255,0.08)",border:"1.5px solid rgba(195,166,255,0.3)",borderRadius:T.r.md,padding:"14px 6px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:28}}>🎲</div>
+          <div style={{fontWeight:700,fontSize:12,marginTop:4}}>מעורב</div>
+        </button>
+      </div>
+      {/* AI + Map */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:12}}>
+        <button onClick={()=>nav("aigen")} style={{background:"rgba(0,201,255,0.08)",border:"1px solid rgba(0,201,255,0.25)",borderRadius:T.r.md,padding:"14px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:22}}>🤖</div><div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#00C9FF"}}>שאלות AI</div>
+        </button>
+        <button onClick={()=>nav("map")} style={{background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.25)",borderRadius:T.r.md,padding:"14px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+          <div style={{fontSize:22}}>🗺️</div><div style={{fontWeight:700,fontSize:13,marginTop:4,color:T.gold}}>מפת ספרים</div>
+        </button>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── TAB: GAMES ──────────────────────────────
+function TabGames({nav}) {
+  const games=[
+    {screen:"fillblank",emoji:"📝",name:"השלם משפט",desc:"מלאי את המילה החסרה",color:"#4ECDC4"},
+    {screen:"scramble",emoji:"🔤",name:"תפזורת מילים",desc:"סדרי את האותיות",color:"#C3A6FF"},
+    {screen:"matching",emoji:"🔗",name:"התאם זוגות",desc:"מצאי את הזוגות הנכונים",color:"#FF6B6B"},
+    {screen:"dialogue",emoji:"💬",name:"דבר עם דמות",desc:"שוחחי עם דמות מהתנ\"ך",color:T.gold},
+    {screen:"tutor",emoji:"🤖",name:"מורה AI",desc:"שאלי כל שאלה על התנ\"ך",color:"#00C9FF"},
+    {screen:"study",emoji:"📚",name:"מצב לימוד",desc:"למדי ואז תתרגלי",color:T.success},
+  ];
+  return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+    <h2 style={{margin:"0 0 12px",fontSize:18,fontWeight:800,color:"#fff"}}>🎮 משחקי למידה</h2>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flex:1}}>
+      {games.map(g=><button key={g.screen} onClick={()=>nav(g.screen)} style={{background:`${g.color}0D`,border:`1.5px solid ${g.color}44`,borderRadius:T.r.lg,padding:"20px 12px",cursor:"pointer",textAlign:"center",color:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:0}}>
+        <div style={{fontSize:36}}>{g.emoji}</div>
+        <div style={{fontWeight:700,fontSize:16,marginTop:8,color:g.color}}>{g.name}</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:4,lineHeight:1.4}}>{g.desc}</div>
+      </button>)}
+    </div>
+  </div>;
+}
+
+// ── TAB: PROFILE ────────────────────────────
+function TabProfile({nav}) {
+  const {state,dispatch}=useS();
+  const pct=state.total>0?Math.round(state.correct/state.total*100):0;
+  const totalQ=Object.values(DB).reduce((s,a)=>s+a.length,0);
+  const answered=Object.keys(state.cards).length;
+  const mastered=Object.values(state.cards).filter(r=>r.tc>=4).length;
+
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:10}}>
+    {/* Profile header */}
+    <div style={{textAlign:"center",padding:"8px 0"}}>
+      <div style={{fontSize:48}}>👩‍🎓</div>
+      <div style={{fontSize:20,fontWeight:800,color:"#fff",marginTop:4}}>{state.name}</div>
+      <div style={{fontSize:14,color:T.muted}}>רצף: {state.streak} ימים 🔥</div>
+    </div>
+
+    {/* Stats */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,padding:"12px 8px",textAlign:"center"}}>
+        <div style={{fontSize:24,fontWeight:800,color:T.success}}>{pct}%</div><div style={{fontSize:11,color:T.muted}}>הצלחה</div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,padding:"12px 8px",textAlign:"center"}}>
+        <div style={{fontSize:24,fontWeight:800,color:"#fff"}}>{answered}</div><div style={{fontSize:11,color:T.muted}}>שאלות</div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,padding:"12px 8px",textAlign:"center"}}>
+        <div style={{fontSize:24,fontWeight:800,color:T.gold}}>{mastered}</div><div style={{fontSize:11,color:T.muted}}>שולטת</div>
+      </div>
+    </div>
+
+    <Bar value={answered} max={totalQ} color="#4ECDC4" height={6}/>
+    <div style={{textAlign:"center",fontSize:11,color:T.muted}}>{answered}/{totalQ} שאלות נוסו</div>
+
+    {/* Menu */}
+    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+      {[
+        {emoji:"📊",label:"סטטיסטיקות מלאות",screen:"stats",color:"#fff"},
+        {emoji:"🏆",label:"הישגים",screen:"achievements",color:T.gold},
+        {emoji:"📖",label:"מילון מונחים",screen:"glossary",color:"#4ECDC4"},
+        {emoji:"👨‍👩‍👧",label:"לוח הורים",screen:"parent",color:"#C3A6FF"},
+      ].map(item=><button key={item.screen} onClick={()=>nav(item.screen)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.md,cursor:"pointer",color:"#fff",fontSize:16,textAlign:"right",minHeight:48}}>
+        <span style={{fontSize:22}}>{item.emoji}</span>
+        <span style={{flex:1,fontWeight:600}}>{item.label}</span>
+        <span style={{color:T.muted}}>◀</span>
+      </button>)}
+    </div>
+
+    {/* Settings row */}
+    <div style={{display:"flex",gap:8}}>
+      <button onClick={()=>dispatch({type:"TOGGLE_AUDIO"})} style={{flex:1,padding:"12px",background:state.audioOn?"rgba(69,183,209,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${state.audioOn?"rgba(69,183,209,0.3)":T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:state.audioOn?"#45B7D1":T.muted,fontSize:13,fontWeight:700}}>🔊 {state.audioOn?"קול פעיל":"קול כבוי"}</button>
+      <button onClick={()=>nav("summary")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:T.muted,fontSize:13,fontWeight:700}}>📊 סיכום מלא</button>
+    </div>
+  </div>;
+}
+
+// ── BOTTOM TAB BAR ──────────────────────────
+const TABS=[
+  {id:"home",emoji:"🏠",label:"בית"},
+  {id:"learn",emoji:"📖",label:"למידה"},
+  {id:"games",emoji:"🎮",label:"משחקים"},
+  {id:"profile",emoji:"👤",label:"שלי"},
+];
+const TAB_SCREENS={home:TabHome,learn:TabLearn,games:TabGames,profile:TabProfile};
+
 function Router() {
-  const initScreen=new URLSearchParams(window.location.search).get("screen")||"home";
-  const [splash,setSplash]=useState(()=>initScreen!=="summary"&&initScreen!=="teacher"&&!sessionStorage.getItem("v4"));
-  const [route,setRoute]=useState({screen:initScreen,params:{}});
+  const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
+  const [splash,setSplash]=useState(()=>!initScreen&&!sessionStorage.getItem("v4"));
+  const [tab,setTab]=useState("home");
+  const [subScreen,setSubScreen]=useState(initScreen?{screen:initScreen,params:{}}:null);
   const online=useOnline();
 
   const nav=useCallback((screen,params={})=>{
-    setRoute({screen,params});
-    window.scrollTo({top:0,behavior:"smooth"});
+    if(screen==="home"){setSubScreen(null);setTab("home");return;}
+    setSubScreen({screen,params});
+    window.scrollTo({top:0});
   },[]);
+
+  const goBack=useCallback(()=>{setSubScreen(null);},[]);
 
   if(splash)return<Splash onDone={()=>{sessionStorage.setItem("v4","1");setSplash(false);}}/>;
 
-  const Screen=SCREENS[route.screen]||Home;
-  return <div style={{minHeight:"100vh",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",position:"relative",overflow:"hidden"}}>
+  const isSubScreen=!!subScreen;
+  const SubComp=isSubScreen?(SCREENS[subScreen.screen]||null):null;
+
+  return <div style={{height:"100dvh",maxHeight:"-webkit-fill-available",display:"flex",flexDirection:"column",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",position:"relative",overflow:"hidden"}}>
     <OfflineBanner online={online}/>
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,pointerEvents:"none",background:"radial-gradient(ellipse at 20% 20%,rgba(255,215,0,0.05) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(78,205,196,0.04) 0%,transparent 55%)"}}/>
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,pointerEvents:"none",background:"radial-gradient(ellipse at 20% 20%,rgba(255,215,0,0.05) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(78,205,196,0.04) 0%,transparent 55%)",zIndex:0}}/>
     <style>{`
-      @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+      @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
       @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.45}}
       @keyframes popIn{from{transform:translateX(-50%) scale(0.8);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
       @keyframes flashFade{0%{opacity:1}100%{opacity:0}}
       @keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(340px) rotate(720deg);opacity:0}}
-      *{box-sizing:border-box;} button,input,select{font-family:inherit;}
+      *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;} button,input,select{font-family:inherit;}
       input:focus,select:focus{outline:none;border-color:${T.gold} !important;}
-      ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px}
+      ::-webkit-scrollbar{width:0;display:none;}
+      html,body{overscroll-behavior:none;overflow:hidden;height:100%;margin:0;padding:0;}
     `}</style>
-    <div style={{maxWidth:"100%",margin:`${online?"0":"36px"} auto 0`,padding:"16px 16px 50px",position:"relative",zIndex:1}}>
-      <Screen nav={nav} params={route.params} online={online}/>
-<FeedbackBtn screen={route.screen}/>
+
+    {/* Main content area */}
+    <div style={{flex:1,overflow:isSubScreen?"auto":"hidden",padding:"12px 14px",position:"relative",zIndex:1}}>
+      {isSubScreen
+        ?<SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
+        :TAB_SCREENS[tab]
+          ?React.createElement(TAB_SCREENS[tab],{nav,online})
+          :null
+      }
     </div>
+
+    {/* Bottom tab bar */}
+    {!isSubScreen&&<div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.08)",background:"rgba(10,8,24,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"6px 0 env(safe-area-inset-bottom,8px)",zIndex:100,flexShrink:0}}>
+      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 0",background:"none",border:"none",cursor:"pointer",color:tab===t.id?T.gold:"rgba(255,255,255,0.35)",transition:"color 0.15s"}}>
+        <span style={{fontSize:22}}>{t.emoji}</span>
+        <span style={{fontSize:10,fontWeight:tab===t.id?700:400}}>{t.label}</span>
+      </button>)}
+    </div>}
+
+    <FeedbackBtn screen={subScreen?.screen||tab}/>
   </div>;
 }
 
