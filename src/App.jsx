@@ -683,8 +683,7 @@ function useOnline() {
 }
 
 // Claude API wrapper
-const GEMINI_KEY = "AIzaSyB9DU0apcLh6aO8WeZlkQ00PtDAJfFLYxE";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+const AI_PROXY_URL = "https://mibqnkhvbgoavwamhmnp.supabase.co/functions/v1/ai-proxy";
 const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמדת ילדה בת 10 בשם לייה.
 הכללים שלך:
 - דברי בעברית פשוטה וחמה, כמו מורה אהובה
@@ -696,16 +695,13 @@ const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמד
 - את מכירה את כל 24 ספרי התנ"ך לעומק`;
 
 async function callAI(prompt, maxTokens=400) {
-  const res = await fetch(GEMINI_URL, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      system_instruction:{parts:[{text:AI_SYSTEM}]},
-      contents:[{parts:[{text:prompt}]}],
-      generationConfig:{maxOutputTokens:maxTokens,temperature:0.7}
-    })
+  const res = await fetch(AI_PROXY_URL, {
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"},
+    body:JSON.stringify({prompt, maxTokens, systemPrompt:AI_SYSTEM})
   });
   const d = await res.json();
-  return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
+  return d.text||"";
 }
 
 // Personal Helper — clarify a question or word
