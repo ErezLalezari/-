@@ -18,6 +18,7 @@ import React, {
   createContext, useContext, useRef, useMemo
 } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { CURRICULUM, SHABBAT_DISCUSSIONS, getDay, weekOf } from "./curriculum";
 
 // ─────────────────────────────────────────────
 // SUPABASE CLIENT
@@ -544,8 +545,10 @@ const INIT = {
   examSessions:0, dailyDone:0, aiChats:0,
   lastPerfect:false, lastDaily:null, session:null,
   audioOn:true, confidence:{},
+  // Curriculum progress
+  completedDays:[], currentDay:1, dayScores:{},
 };
-const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily","audioOn","confidence"];
+const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily","audioOn","confidence","completedDays","currentDay","dayScores"];
 
 function load() {
   try { const r=localStorage.getItem(STORAGE_KEY); return r?{...INIT,...JSON.parse(r),session:null}:INIT; }
@@ -626,6 +629,12 @@ function reducer(state, action) {
       return {...state, aiChats:(state.aiChats||0)+1};
     case "CLEAR_ACH": return {...state,_newAch:[]};
     case "TOGGLE_AUDIO": return {...state,audioOn:!state.audioOn};
+    case "COMPLETE_DAY": {
+      const {day, score} = action;
+      const completedDays = state.completedDays.includes(day) ? state.completedDays : [...state.completedDays,day];
+      const currentDay = Math.max(state.currentDay||1, day+1);
+      return {...state, completedDays, currentDay, dayScores:{...state.dayScores,[day]:score}};
+    }
     case "RESET": localStorage.removeItem(STORAGE_KEY); return {...INIT};
     default: return state;
   }
@@ -2660,69 +2669,310 @@ const SCREENS = {
   map:VisualMap, stats:Stats, achievements:Achievements,
   glossary:Glossary, parent:Parent, summary:ParentSummary, teacher:TeacherDash,
   fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
+  lesson:DailyLesson,
 };
 
 // ── TAB: HOME ───────────────────────────────
+// ── DAILY LESSON (Learn → Practice → Done) ──
+function DailyLesson({nav, params, online}) {
+  const {state, dispatch} = useS();
+  const day = params?.day;
+  const dayData = getDay(day);
+  const [phase, setPhase] = useState("lesson"); // lesson → quiz → done
+  const [lessonStep, setLessonStep] = useState(0);
+  const [quizIdx, setQuizIdx] = useState(0);
+  const [correct, setCorrect] = useState(0);
+  const [sel, setSel] = useState(null);
+  const [answered, setAnswered] = useState(false);
+  const [animIn, setAnimIn] = useState(true);
+
+  // Build quiz from the day's book questions (existing DB)
+  const quizQuestions = useMemo(() => {
+    if (!dayData) return [];
+    const pool = DB[dayData.book] || [];
+    const shuffled = Engine.shuffle([...pool]);
+    return shuffled.slice(0, 3).map(q => Engine.shuffleOptions(q));
+  }, [dayData]);
+
+  useEffect(() => {
+    if (phase === "lesson" && dayData && state.audioOn) {
+      const part = dayData.lesson[lessonStep];
+      if (part) Audio.speak(part.title + ". " + part.text, {rate: 0.85});
+    }
+    return () => Audio.stop();
+  }, [lessonStep, phase, state.audioOn, dayData]);
+
+  if (!dayData) return <div style={{padding:40,textAlign:"center",color:T.muted}}>שיעור לא נמצא</div>;
+
+  const advanceLesson = () => {
+    if (lessonStep >= dayData.lesson.length - 1) {
+      setPhase("quiz");
+      return;
+    }
+    setAnimIn(false);
+    setTimeout(() => {setLessonStep(s => s + 1); setAnimIn(true);}, 200);
+  };
+  const backLesson = () => {
+    if (lessonStep <= 0) return;
+    setAnimIn(false);
+    setTimeout(() => {setLessonStep(s => s - 1); setAnimIn(true);}, 200);
+  };
+
+  const answerQuiz = (opt) => {
+    if (answered) return;
+    Audio.tap();
+    const q = quizQuestions[quizIdx];
+    const ok = opt === q.a;
+    setSel(opt); setAnswered(true);
+    if (ok) {setCorrect(c => c + 1); Audio.correct(); Audio.vCorrect();}
+    else {Audio.wrong(); Audio.vWrong();}
+    logQuizResult(q.id, dayData.book, ok, false, 0);
+  };
+  const nextQuestion = () => {
+    if (quizIdx >= quizQuestions.length - 1) {
+      // Done!
+      const finalScore = Math.round(correct / quizQuestions.length * 100);
+      dispatch({type: "COMPLETE_DAY", day, score: finalScore});
+      if (correct === quizQuestions.length) Audio.fanfare();
+      setPhase("done");
+      return;
+    }
+    setQuizIdx(i => i + 1); setSel(null); setAnswered(false);
+  };
+
+  // ───── LESSON PHASE ─────
+  if (phase === "lesson") {
+    const part = dayData.lesson[lessonStep];
+    const total = dayData.lesson.length;
+    return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      {/* Top bar */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <div style={{flex:1,display:"flex",gap:4}}>
+          {dayData.lesson.map((_, i) => <div key={i} style={{flex:1,height:5,borderRadius:3,background:i<=lessonStep?dayData.color:"rgba(255,255,255,0.1)",transition:"all 0.3s"}}/>)}
+        </div>
+        <span style={{fontSize:12,color:T.muted,minWidth:40,textAlign:"left"}}>{lessonStep+1}/{total}</span>
+      </div>
+
+      {/* Lesson card */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",textAlign:"center",padding:"10px 0",opacity:animIn?1:0,transform:animIn?"translateY(0)":"translateY(10px)",transition:"all 0.2s"}}>
+        <div style={{fontSize:56,marginBottom:14,animation:"float 2.5s ease-in-out infinite"}}>{dayData.emoji}</div>
+        <div style={{fontSize:13,color:dayData.color,fontWeight:700,marginBottom:6,letterSpacing:1.2}}>יום {day} · {dayData.title}</div>
+        <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 16px"}}>{part.title}</h2>
+        <div style={{fontSize:19,lineHeight:1.9,color:"rgba(255,255,255,0.9)",fontWeight:500,maxWidth:500,margin:"0 auto",padding:"0 6px"}}>{part.text}</div>
+        {part.verse && <div style={{marginTop:18,padding:"12px 18px",background:`${dayData.color}14`,border:`1px solid ${dayData.color}44`,borderRadius:T.r.md,fontSize:16,lineHeight:1.7,color:dayData.color,fontStyle:"italic",maxWidth:500,margin:"18px auto 0"}}>"{part.verse}"</div>}
+      </div>
+
+      {/* Bottom nav */}
+      <div style={{display:"flex",gap:10,paddingTop:10}}>
+        <button onClick={backLesson} disabled={lessonStep===0} style={{flex:1,background:"rgba(255,255,255,0.06)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"16px",color:lessonStep===0?T.muted:"#fff",cursor:lessonStep===0?"default":"pointer",fontWeight:700,fontSize:15,opacity:lessonStep===0?0.3:1}}>→ הקודם</button>
+        <button onClick={advanceLesson} style={{flex:2,background:`linear-gradient(135deg,${dayData.color},${dayData.color}cc)`,border:"none",borderRadius:T.r.md,padding:"16px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:16}}>{lessonStep >= total-1 ? "🎯 בואי נתרגל!" : "← הבא"}</button>
+      </div>
+    </div>;
+  }
+
+  // ───── QUIZ PHASE ─────
+  if (phase === "quiz") {
+    const q = quizQuestions[quizIdx];
+    if (!q) {
+      // No questions available — finish anyway
+      dispatch({type: "COMPLETE_DAY", day, score: 100});
+      setPhase("done");
+      return null;
+    }
+    const optState = (opt) => !answered ? "default" : opt===q.a ? "correct" : opt===sel ? "wrong" : "default";
+    return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <div style={{flex:1,display:"flex",gap:4}}>
+          {quizQuestions.map((_, i) => <div key={i} style={{flex:1,height:5,borderRadius:3,background:i<=quizIdx?T.gold:"rgba(255,255,255,0.1)"}}/>)}
+        </div>
+        <span style={{fontSize:12,color:T.muted}}>{quizIdx+1}/{quizQuestions.length}</span>
+      </div>
+      <div style={{textAlign:"center",marginBottom:14}}>
+        <div style={{fontSize:12,color:T.gold,fontWeight:700,letterSpacing:1.2}}>תרגול · {dayData.title}</div>
+      </div>
+      <Card style={{textAlign:"center",padding:"24px 20px"}}>
+        <div style={{fontSize:36,marginBottom:10}}>{dayData.emoji}</div>
+        <h2 style={{fontSize:20,fontWeight:800,lineHeight:1.7,margin:0}}>{q.q}</h2>
+      </Card>
+      <div style={{marginTop:"auto"}}>
+        {(q.o||[]).map((opt,i) => <AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answerQuiz(opt)}/>)}
+        {answered && <div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+          <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
+          <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{q.exp}</div>
+          <button onClick={nextQuestion} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{quizIdx >= quizQuestions.length-1 ? "✅ סיום" : "הבאה ▶"}</button>
+        </div>}
+      </div>
+    </div>;
+  }
+
+  // ───── DONE PHASE ─────
+  const finalPct = Math.round(correct / quizQuestions.length * 100);
+  const nextDay = day + 1;
+  const hasNext = nextDay <= CURRICULUM.length;
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",textAlign:"center",justifyContent:"center",gap:16,padding:"20px 10px"}}>
+    <div style={{fontSize:80,animation:"float 2s ease-in-out infinite"}}>{finalPct===100?"🏆":finalPct>=66?"⭐":"💪"}</div>
+    <div>
+      <h2 style={{fontSize:28,fontWeight:900,color:dayData.color,margin:"0 0 4px"}}>סיימת יום {day}!</h2>
+      <div style={{fontSize:18,color:"#fff",marginBottom:10}}>{dayData.title} {dayData.emoji}</div>
+      <div style={{fontSize:48,fontWeight:800,color:finalPct>=66?T.success:T.gold}}>{correct}/{quizQuestions.length}</div>
+      <div style={{fontSize:14,color:T.muted,marginTop:4}}>{finalPct}% הצלחה</div>
+    </div>
+    {dayData.discussion && <Card style={{padding:"16px 18px",textAlign:"right",borderColor:`${T.gold}44`}}>
+      <div style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:6}}>💬 לשיחה עם אבא/אמא</div>
+      <div style={{fontSize:15,lineHeight:1.7,color:"rgba(255,255,255,0.9)"}}>{dayData.discussion}</div>
+    </Card>}
+    <div style={{display:"flex",gap:8}}>
+      {hasNext && <button onClick={()=>{setPhase("lesson");setLessonStep(0);setQuizIdx(0);setCorrect(0);setSel(null);setAnswered(false);nav("lesson",{day:nextDay});}} style={{flex:2,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"16px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:16}}>→ יום {nextDay}</button>}
+      <button onClick={()=>nav("home")} style={{flex:1,background:"rgba(255,255,255,0.06)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"16px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15}}>🏠 בית</button>
+    </div>
+  </div>;
+}
+
+// ── CURRICULUM PATH (Duolingo-style) ────────
+function CurriculumPath({nav}) {
+  const {state} = useS();
+  const completed = state.completedDays || [];
+  const current = state.currentDay || 1;
+  const pathRef = useRef(null);
+
+  // Scroll to current day on mount
+  useEffect(() => {
+    if (pathRef.current) {
+      const el = pathRef.current.querySelector(`[data-day="${current}"]`);
+      if (el) setTimeout(()=>el.scrollIntoView({behavior:"smooth",block:"center"}), 300);
+    }
+  }, []);
+
+  // Group days into weeks (8 days per week)
+  const weeks = [];
+  for (let i = 0; i < CURRICULUM.length; i += 8) {
+    weeks.push(CURRICULUM.slice(i, i + 8));
+  }
+
+  const dayStatus = (day) => {
+    if (completed.includes(day)) return "completed";
+    if (day === current) return "current";
+    if (day < current) return "available";
+    return "locked";
+  };
+
+  return <div ref={pathRef} style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto"}}>
+    {/* Header */}
+    <div style={{textAlign:"center",padding:"8px 0 16px",position:"sticky",top:0,background:T.bg,zIndex:2}}>
+      <div style={{fontSize:13,color:T.muted,marginBottom:2}}>המסע של לייה</div>
+      <h1 style={{fontSize:22,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>30 ימים בתנ״ך</h1>
+      <div style={{fontSize:14,color:T.muted,marginTop:4}}>יום {current} מתוך {CURRICULUM.length} · {completed.length} הושלמו</div>
+    </div>
+
+    {/* Path */}
+    <div style={{flex:1,paddingBottom:20}}>
+      {weeks.map((week, wi) => {
+        const weekNum = wi + 1;
+        const weekTitles = ["בראשית — ההתחלה","יציאת מצרים","המדבר וכיבוש הארץ","סיפורים נבחרים"];
+        return <div key={wi} style={{marginBottom:24}}>
+          <div style={{fontSize:13,color:T.gold,fontWeight:700,textAlign:"center",marginBottom:14,letterSpacing:1}}>שבוע {weekNum} · {weekTitles[wi]}</div>
+          {week.map((d, i) => {
+            const st = dayStatus(d.day);
+            const isEven = i % 2 === 0;
+            const offset = isEven ? "translateX(-30px)" : "translateX(30px)";
+            const isLocked = st === "locked";
+            const isCompleted = st === "completed";
+            const isCurrent = st === "current";
+            const score = state.dayScores?.[d.day];
+            return <div key={d.day} data-day={d.day} style={{display:"flex",justifyContent:"center",marginBottom:14,transform:offset}}>
+              <button onClick={()=>!isLocked && nav("lesson",{day:d.day})} disabled={isLocked} style={{
+                width:96,height:96,borderRadius:48,
+                background: isCompleted ? `linear-gradient(145deg,${d.color},${d.color}aa)` :
+                           isCurrent ? `linear-gradient(145deg,${T.gold},#FF8C00)` :
+                           "rgba(255,255,255,0.04)",
+                border: isLocked ? "2px solid rgba(255,255,255,0.08)" :
+                       isCurrent ? "3px solid #FFD700" :
+                       `2px solid ${d.color}`,
+                cursor: isLocked ? "default" : "pointer",
+                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                gap:2,position:"relative",transition:"all 0.2s",
+                boxShadow: isCurrent ? `0 0 20px ${T.gold}66` : isCompleted ? `0 4px 12px ${d.color}44` : "none",
+                opacity: isLocked ? 0.4 : 1,
+              }}>
+                <div style={{fontSize:isLocked?22:32}}>{isLocked?"🔒":d.emoji}</div>
+                {!isLocked && <div style={{fontSize:10,fontWeight:800,color:isCompleted||isCurrent?"#1a0533":d.color,lineHeight:1}}>יום {d.day}</div>}
+                {isCompleted && score !== undefined && <div style={{fontSize:9,fontWeight:700,color:"#1a0533"}}>{score}%</div>}
+                {isCompleted && <div style={{position:"absolute",top:-6,right:-6,width:24,height:24,borderRadius:12,background:T.success,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:"2px solid #0a0818"}}>✓</div>}
+              </button>
+            </div>;
+          })}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function TabHome({nav}) {
   const {state,dispatch}=useS();
-  const pct=state.total>0?Math.round(state.correct/state.total*100):0;
-  const dailyDone=Engine.isDailyDone(state.lastDaily);
-  const wrongCount=Object.values(state.cards).filter(r=>r.tc===0&&r.seen).length;
-  const mastered=Object.values(state.cards).filter(r=>r.tc>=4).length;
-  const totalQ=Object.values(DB).reduce((s,a)=>s+a.length,0);
+  const currentDay = state.currentDay || 1;
+  const todaysLesson = getDay(currentDay);
+  const completed = state.completedDays || [];
+  const progressPct = Math.round(completed.length / CURRICULUM.length * 100);
+  const dailyDone = Engine.isDailyDone(state.lastDaily);
+  const isFriday = new Date().getDay() === 5; // Friday = Shabbat prep
+  const weekNum = weekOf(currentDay);
+  const weekDiscussions = SHABBAT_DISCUSSIONS[weekNum] || [];
 
-  return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:12}}>
-    {/* Compact hero */}
-    <div style={{textAlign:"center",padding:"8px 0 0"}}>
-      <h1 style={{fontSize:24,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>שלום {state.name}! 🌟</h1>
+  // Check if lesson was completed today
+  const todayStr = new Date().toDateString();
+  const doneToday = state.lastDay === todayStr && completed.includes(currentDay - 1);
+
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:12,overflowY:"auto"}}>
+    {/* Compact greeting */}
+    <div style={{textAlign:"center",padding:"4px 0 0"}}>
+      <h1 style={{fontSize:22,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>שלום {state.name}! 🌟</h1>
+      <div style={{fontSize:13,color:T.muted,marginTop:2}}>יום {currentDay} מתוך {CURRICULUM.length} · רצף {state.streak}🔥</div>
     </div>
 
-    {/* Stats row */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,padding:"12px 8px"}}>
-      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{state.correct}</div><div style={{fontSize:10,color:T.muted}}>נכון</div></div>
-      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#FF6B6B"}}>{state.streak}🔥</div><div style={{fontSize:10,color:T.muted}}>ימים</div></div>
-      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#4ECDC4"}}>{pct}%</div><div style={{fontSize:10,color:T.muted}}>הצלחה</div></div>
-      <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:T.success}}>{mastered}</div><div style={{fontSize:10,color:T.muted}}>שולטת</div></div>
-    </div>
-
-    {/* Daily challenge — big CTA */}
-    <button onClick={()=>!dailyDone&&nav("daily")} style={{background:dailyDone?"rgba(93,252,138,0.1)":`linear-gradient(135deg,${T.gold}18,${T.gold}08)`,border:`2px solid ${dailyDone?T.success+"55":T.gold+"55"}`,borderRadius:T.r.lg,padding:"20px",cursor:dailyDone?"default":"pointer",display:"flex",alignItems:"center",gap:16,minHeight:80}}>
-      <div style={{fontSize:44}}>{dailyDone?"✅":"📅"}</div>
-      <div style={{textAlign:"right",flex:1}}>
-        <div style={{fontWeight:800,fontSize:20,color:dailyDone?T.success:T.gold}}>{dailyDone?"אתגר יומי הושלם!":"אתגר יומי"}</div>
-        <div style={{fontSize:14,color:T.muted,marginTop:2}}>{dailyDone?`רצף: ${state.streak} ימים 🔥`:"שאלה אחת ביום — שמרי על הרצף!"}</div>
-      </div>
-    </button>
-
-    {/* Quick actions grid */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flex:1}}>
-      {wrongCount>0&&<button onClick={()=>{dispatch({type:"START",topic:null,mode:MODE.REVIEW});nav("quiz",{mode:MODE.REVIEW});}} style={{background:"rgba(195,166,255,0.08)",border:"1.5px solid rgba(195,166,255,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
-        <div style={{fontSize:28}}>🔄</div>
-        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:"#C3A6FF"}}>חזרה</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>{wrongCount} טעויות</div>
-      </button>}
-      <button onClick={()=>nav("study")} style={{background:"rgba(93,252,138,0.08)",border:"1.5px solid rgba(93,252,138,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
-        <div style={{fontSize:28}}>📚</div>
-        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:T.success}}>מצב לימוד</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>למד ← תרגל</div>
-      </button>
-      <button onClick={()=>nav("tutor")} style={{background:"rgba(0,201,255,0.08)",border:"1.5px solid rgba(0,201,255,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
-        <div style={{fontSize:28}}>🤖</div>
-        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:"#00C9FF"}}>מורה AI</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>שאלי כל דבר</div>
-      </button>
-      <button onClick={()=>nav("quiz",{mode:MODE.EXAM})} style={{background:"rgba(255,215,0,0.08)",border:"1.5px solid rgba(255,215,0,0.3)",borderRadius:T.r.lg,padding:"16px",cursor:"pointer",textAlign:"center",color:"#fff",minHeight:48}}>
-        <div style={{fontSize:28}}>🎓</div>
-        <div style={{fontWeight:700,fontSize:15,marginTop:4,color:T.gold}}>מבחן</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>טיימר 30 שניות</div>
-      </button>
-    </div>
+    {/* TODAY'S LESSON — THE HERO */}
+    {todaysLesson && <button onClick={()=>nav("lesson",{day:currentDay})} style={{
+      background:`linear-gradient(135deg,${todaysLesson.color}22,${todaysLesson.color}0a)`,
+      border:`2px solid ${todaysLesson.color}77`,
+      borderRadius:T.r.lg,padding:"22px 20px",cursor:"pointer",
+      display:"flex",flexDirection:"column",alignItems:"center",gap:8,textAlign:"center",
+      boxShadow:`0 4px 20px ${todaysLesson.color}22`,
+    }}>
+      <div style={{fontSize:12,color:todaysLesson.color,fontWeight:700,letterSpacing:1.5}}>📖 השיעור של היום</div>
+      <div style={{fontSize:56,animation:"float 3s ease-in-out infinite"}}>{todaysLesson.emoji}</div>
+      <div style={{fontWeight:800,fontSize:24,color:"#fff"}}>{todaysLesson.title}</div>
+      <div style={{fontSize:14,color:T.muted}}>יום {currentDay} · {todaysLesson.lesson.length} קלפים + 3 שאלות</div>
+      <div style={{marginTop:8,padding:"10px 24px",background:todaysLesson.color,borderRadius:22,color:"#1a0533",fontWeight:800,fontSize:15}}>🚀 להתחיל ללמוד</div>
+    </button>}
 
     {/* Progress bar */}
-    <div style={{padding:"4px 0"}}>
-      <Bar value={Object.keys(state.cards).length} max={totalQ} color="#4ECDC4" height={6}/>
-      <div style={{textAlign:"center",fontSize:11,color:T.muted,marginTop:3}}>{Object.keys(state.cards).length}/{totalQ} שאלות</div>
+    <div style={{padding:"2px 4px"}}>
+      <Bar value={completed.length} max={CURRICULUM.length} color={T.gold} height={6}/>
+      <div style={{textAlign:"center",fontSize:11,color:T.muted,marginTop:4}}>{completed.length}/{CURRICULUM.length} ימים הושלמו · {progressPct}%</div>
     </div>
+
+    {/* Shabbat discussion card (Friday only) */}
+    {isFriday && weekDiscussions.length > 0 && <Card style={{padding:"14px 16px",borderColor:`${T.gold}44`,background:`${T.gold}08`,marginBottom:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <span style={{fontSize:20}}>🕯️</span>
+        <div style={{fontWeight:800,fontSize:15,color:T.gold}}>שיחת שבת עם אבא/אמא</div>
+      </div>
+      <div style={{fontSize:13,color:"rgba(255,255,255,0.8)",lineHeight:1.6}}>{weekDiscussions[Math.floor(Math.random() * weekDiscussions.length)]}</div>
+    </Card>}
+
+    {/* Quick actions */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <button onClick={()=>!dailyDone&&nav("daily")} style={{background:dailyDone?"rgba(93,252,138,0.08)":"rgba(255,215,0,0.08)",border:`1.5px solid ${dailyDone?T.success+"44":T.gold+"44"}`,borderRadius:T.r.md,padding:"14px",cursor:dailyDone?"default":"pointer",textAlign:"center",color:"#fff"}}>
+        <div style={{fontSize:24}}>{dailyDone?"✅":"📅"}</div>
+        <div style={{fontWeight:700,fontSize:13,marginTop:4,color:dailyDone?T.success:T.gold}}>{dailyDone?"הושלם":"אתגר יומי"}</div>
+      </button>
+      <button onClick={()=>nav("tutor")} style={{background:"rgba(0,201,255,0.08)",border:"1.5px solid rgba(0,201,255,0.3)",borderRadius:T.r.md,padding:"14px",cursor:"pointer",textAlign:"center",color:"#fff"}}>
+        <div style={{fontSize:24}}>🤖</div>
+        <div style={{fontWeight:700,fontSize:13,marginTop:4,color:"#00C9FF"}}>מורה AI</div>
+      </button>
+    </div>
+
+    {/* View full path */}
+    <button onClick={()=>{}} style={{display:"none"}}></button>
   </div>;
 }
 
@@ -2841,11 +3091,12 @@ function TabProfile({nav}) {
 // ── BOTTOM TAB BAR ──────────────────────────
 const TABS=[
   {id:"home",emoji:"🏠",label:"בית"},
-  {id:"learn",emoji:"📖",label:"למידה"},
+  {id:"path",emoji:"🗺️",label:"המסע"},
+  {id:"learn",emoji:"📚",label:"ספרים"},
   {id:"games",emoji:"🎮",label:"משחקים"},
   {id:"profile",emoji:"👤",label:"שלי"},
 ];
-const TAB_SCREENS={home:TabHome,learn:TabLearn,games:TabGames,profile:TabProfile};
+const TAB_SCREENS={home:TabHome,path:CurriculumPath,learn:TabLearn,games:TabGames,profile:TabProfile};
 
 function Router({onLauncher}) {
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
