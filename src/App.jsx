@@ -4034,14 +4034,16 @@ function Router({onLauncher}) {
 
     {/* Main content area */}
     <div style={{flex:1,overflow:isSubScreen?"auto":"hidden",padding:"12px 14px",position:"relative",zIndex:1}}>
-      {isSubScreen
-        ?<><SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
+      {isSubScreen&&SubComp
+        ?<><SubComp nav={nav} params={subScreen?.params||{}} online={online} goBack={goBack}/>
           {/* Floating back button on sub-screens */}
           <button onClick={goBack} style={{position:"fixed",top:10,right:10,minHeight:44,borderRadius:22,background:"rgba(10,8,24,0.95)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"8px 16px 8px 12px",fontSize:14,fontWeight:700,color:T.gold,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕ חזרה</button>
         </>
+        :isSubScreen
+          ?<div style={{padding:40,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>🤔</div><p style={{color:T.muted}}>מסך לא נמצא</p><Btn onClick={goBack}>חזרה</Btn></div>
         :TAB_SCREENS[tab]
           ?React.createElement(TAB_SCREENS[tab],{nav,online})
-          :null
+          :React.createElement(TAB_SCREENS["home"],{nav,online})
       }
     </div>
 
