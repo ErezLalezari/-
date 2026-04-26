@@ -703,11 +703,11 @@ const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמד
 - השתמשי באמוג'ים בצמצום כדי לשמור על חמימות
 - את מכירה את כל 24 ספרי התנ"ך לעומק`;
 
-async function callAI(prompt, maxTokens=400) {
+async function callAI(prompt, maxTokens=400, customSystem=null) {
   const res = await fetch(AI_PROXY_URL, {
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"},
-    body:JSON.stringify({prompt, maxTokens, systemPrompt:AI_SYSTEM})
+    body:JSON.stringify({prompt, maxTokens, systemPrompt: customSystem || AI_SYSTEM})
   });
   const d = await res.json();
   return d.text||"";
@@ -2156,27 +2156,59 @@ function StudyMode({nav,online}) {
   const [selTopic,setSelTopic]=useState(null);
   const [step,setStep]=useState("pick"); // pick → learn → quiz
   const [lessonParts,setLessonParts]=useState([]);
+  const [lessonQuestions,setLessonQuestions]=useState([]);
   const [partIdx,setPartIdx]=useState(0);
   const [loading,setLoading]=useState(false);
   const {state}=useS();
 
   const generateLesson=async(topic)=>{
     setLoading(true);
-    const prompt=`את מורה תנ"ך לילדה בת 10 בשם לייה.
-צור שיעור קצר על ספר "${topic.name}" (${topic.desc}).
-חלקי את השיעור ל-5 חלקים. כל חלק:
-- כותרת קצרה
-- 2-3 משפטים פשוטים שמסבירים את הנושא
-- ציטוט קצר מהתנ"ך (אם רלוונטי)
-פורמט JSON בלבד:
-[{"title":"כותרת","text":"הסבר","verse":"פסוק (אופציונלי)"}]`;
+    // Generate lesson AND matching questions in one call
+    const prompt=`צרי שיעור מלא לילדה בת 10 על ספר "${topic.name}" (${topic.desc}) בתנ"ך.
+החזירי JSON בלבד בפורמט הבא:
+{
+  "lesson": [
+    {"title":"כותרת קצרה","text":"הסבר 2-3 משפטים פשוטים","verse":"ציטוט קצר אופציונלי"}
+  ],
+  "questions": [
+    {"q":"שאלה","a":"תשובה נכונה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז","exp":"הסבר"}
+  ]
+}
+
+חשוב מאוד:
+- 5 חלקי שיעור, 3 שאלות
+- השאלות חייבות להיות על מה שלימדת ב-lesson — לא על דברים אחרים
+- התשובה הנכונה (a) חייבת להופיע ב-options (o)
+- הכל בעברית פשוטה`;
+
     try{
-      const raw=await callAI(prompt,600);
-      const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
-      if(Array.isArray(parsed)&&parsed.length>0) setLessonParts(parsed);
-      else setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
-    }catch{
+      const raw=await callAI(prompt,1500);
+      const clean=raw.replace(/```json|```/g,"").trim();
+      const objMatch=clean.match(/\{[\s\S]*\}/);
+      const parsed=objMatch?JSON.parse(objMatch[0]):null;
+      if(parsed?.lesson?.length>0){
+        setLessonParts(parsed.lesson);
+        if(parsed.questions?.length>0){
+          // Map AI questions to our format
+          const qs=parsed.questions.map((q,i)=>({
+            id:`study_${topic.id}_${Date.now()}_${i}`,
+            type:Q.MULTIPLE,
+            q:q.q,a:q.a,o:q.o||[],hint:q.hint||"",exp:q.exp||"",
+            isAI:true
+          }));
+          setLessonQuestions(qs);
+        }else{
+          setLessonQuestions([]);
+        }
+      }else{
+        // Fallback: use SUMMARIES + random questions from DB
+        setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
+        setLessonQuestions([]);
+      }
+    }catch(e){
+      console.warn("[StudyMode] generation failed:",e.message);
       setLessonParts(SUMMARIES[topic.id]?.map((s,i)=>({title:`חלק ${i+1}`,text:s,verse:""}))||[]);
+      setLessonQuestions([]);
     }
     setLoading(false);
     setPartIdx(0);
@@ -2223,8 +2255,75 @@ function StudyMode({nav,online}) {
     </div>;
   }
 
-  // Quiz after learning
-  return<Quiz nav={nav} params={{topic:selTopic}} online={online}/>;
+  // Quiz after learning — use lesson-specific questions if available
+  return<StudyQuiz nav={nav} topic={selTopic} questions={lessonQuestions} online={online}/>;
+}
+
+// ── STUDY QUIZ — uses questions matched to lesson ──
+function StudyQuiz({nav, topic, questions, online}) {
+  const {state, dispatch} = useS();
+  const [idx,setIdx]=useState(0);
+  const [sel,setSel]=useState(null);
+  const [answered,setAnswered]=useState(false);
+  const [correct,setCorrect]=useState(0);
+
+  // If no AI questions generated, fall back to topic pool
+  const pool=useMemo(()=>{
+    if(questions && questions.length>0) return questions.map(q=>Engine.shuffleOptions(q));
+    const dbQs=DB[topic?.id]||[];
+    return Engine.shuffle([...dbQs]).slice(0,3).map(q=>Engine.shuffleOptions(q));
+  },[questions,topic]);
+
+  if(!pool.length) return<div style={{padding:40,textAlign:"center"}}>
+    <div style={{fontSize:48,marginBottom:12}}>📚</div>
+    <p style={{color:T.muted}}>אין שאלות זמינות לחזרה כרגע</p>
+    <Btn onClick={()=>nav("home")}>חזרה לבית</Btn>
+  </div>;
+
+  const q=pool[idx];
+  if(!q) return<div style={{padding:40,textAlign:"center"}}>
+    <div style={{fontSize:48,marginBottom:12}}>{correct===pool.length?"🏆":correct>=pool.length*0.66?"⭐":"💪"}</div>
+    <h2 style={{color:T.gold,margin:"8px 0"}}>סיימת!</h2>
+    <div style={{fontSize:48,fontWeight:800,color:correct>=pool.length*0.66?T.success:T.gold,margin:"8px 0"}}>{correct}/{pool.length}</div>
+    <Btn onClick={()=>nav("home")} style={{marginTop:16}}>🏠 חזרה לבית</Btn>
+  </div>;
+
+  const answer=(opt)=>{
+    if(answered) return;
+    Audio.tap();
+    const ok=opt===q.a;
+    setSel(opt); setAnswered(true);
+    if(ok){setCorrect(c=>c+1); Audio.correct(); Audio.vCorrect();}
+    else{Audio.wrong(); Audio.vWrong();}
+    logQuizResult(q.id, topic?.id||"study", ok, false, 0);
+  };
+  const next=()=>{setIdx(i=>i+1); setSel(null); setAnswered(false);};
+  const optState=(opt)=>!answered?"default":opt===q.a?"correct":opt===sel?"wrong":"default";
+
+  return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <div style={{flex:1,display:"flex",gap:4}}>
+        {pool.map((_,i)=><div key={i} style={{flex:1,height:5,borderRadius:3,background:i<=idx?topic?.cp||T.gold:"rgba(255,255,255,0.1)"}}/>)}
+      </div>
+      <span style={{fontSize:12,color:T.muted}}>{idx+1}/{pool.length}</span>
+    </div>
+    <div style={{textAlign:"center",marginBottom:10}}>
+      <div style={{fontSize:12,color:topic?.cp||T.gold,fontWeight:700,letterSpacing:1.2}}>{topic?.emoji} תרגול · {topic?.name}</div>
+    </div>
+    <Card style={{textAlign:"center",padding:"24px 20px"}}>
+      <div style={{fontSize:36,marginBottom:8}}>{topic?.emoji||"📖"}</div>
+      <h2 style={{fontSize:20,fontWeight:800,lineHeight:1.7,margin:0}}>{q.q}</h2>
+      {q.isAI&&<div style={{marginTop:6,fontSize:10,color:"#00C9FF",opacity:0.6}}>✨ שאלה מהשיעור</div>}
+    </Card>
+    <div style={{marginTop:"auto"}}>
+      {(q.o||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
+      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
+        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{q.exp}</div>
+        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=pool.length-1?"✅ סיום":"הבאה ▶"}</button>
+      </div>}
+    </div>
+  </div>;
 }
 
 // ── MATCHING PAIRS GAME ─────────────────────
@@ -2322,19 +2421,40 @@ function Dialogue({nav,online}) {
     if(!input.trim()||loading||!char) return;
     const userMsg=input.trim();
     setInput("");
-    setMessages(m=>[...m,{role:"user",text:userMsg}]);
+    const newMessages=[...messages,{role:"user",text:userMsg}];
+    setMessages(newMessages);
     setLoading(true);
-    const history=messages.map(m=>`${m.role==="user"?"לייה":char.name}: ${m.text}`).join("\n");
-    const prompt=`${char.system}
-לייה היא ילדה בת 10 שלומדת תנ"ך. דבר/י איתה בשפה פשוטה וחמה. 2-3 משפטים.
-${history?`היסטוריה:\n${history}\n`:""}
-לייה: ${userMsg}
-${char.name}:`;
+
+    // Build proper conversation history (last 6 exchanges for context)
+    const recentHistory=newMessages.slice(-8,-1).map(m=>
+      `${m.role==="user"?"לייה":char.name}: ${m.text}`
+    ).join("\n");
+
+    // Use the character's persona as the SYSTEM prompt (not the prompt itself)
+    const characterSystem=`${char.system}
+
+הוראות חשובות:
+- את/ה הדמות עצמה. ענ/י תמיד בגוף ראשון.
+- לייה היא ילדה בת 10. דבר/י בעברית פשוטה וחמה.
+- 2-4 משפטים בלבד.
+- אל תחזור/חזרי על אותם משפטים שאמרת קודם.
+- אם השאלה לא ברורה — שאל/י שאלה חוזרת.
+- שתפ/י חוויות אישיות מהסיפור שלך.`;
+
+    const userPrompt=recentHistory
+      ?`השיחה עד כה:\n${recentHistory}\n\nלייה שואלת עכשיו: "${userMsg}"\n\nענ/י כ${char.name}:`
+      :`לייה שואלת: "${userMsg}"\n\nענ/י כ${char.name}:`;
+
     try{
-      const reply=await callAI(prompt,200);
-      setMessages(m=>[...m,{role:"char",text:reply}]);
-    }catch{
-      setMessages(m=>[...m,{role:"char",text:"סליחה, לא הצלחתי לענות כרגע..."}]);
+      const reply=await callAI(userPrompt,250,characterSystem);
+      const cleanReply=(reply||"").trim();
+      if(!cleanReply||cleanReply.length<3){
+        setMessages(m=>[...m,{role:"char",text:`${char.emoji} סליחה לייה, לא הבנתי. תוכלי לנסח שוב?`}]);
+      }else{
+        setMessages(m=>[...m,{role:"char",text:cleanReply}]);
+      }
+    }catch(e){
+      setMessages(m=>[...m,{role:"char",text:"סליחה, יש בעיית חיבור. נסי שוב..."}]);
     }
     setLoading(false);
   };
