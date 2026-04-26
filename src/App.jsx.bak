@@ -19,8 +19,6 @@ import React, {
 } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { CURRICULUM, SHABBAT_DISCUSSIONS, getDay, weekOf } from "./curriculum";
-import { ALL_TANAKH_BOOKS, BOOK_BY_ID } from "./tanakhBooks";
-import { LEVELS, FOCUS_ORDER, buildMatrix, pickNextTask, overallProgress, estimateReadiness, recordAttempt } from "./mastery";
 
 // ─────────────────────────────────────────────
 // SUPABASE CLIENT
@@ -2793,7 +2791,6 @@ const SCREENS = {
   fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
   lesson:DailyLesson,
   realquiz:RealQuiz, mockexam:MockExam, coverage:CoverageMap,
-  "level-quiz":LevelQuiz, mastery:MasteryDashboard,
 };
 
 // ── TAB: HOME ───────────────────────────────
@@ -3033,76 +3030,40 @@ function CurriculumPath({nav}) {
 
 function TabHome({nav}) {
   const {state,dispatch}=useS();
-  const dailyDone = Engine.isDailyDone(state.lastDaily);
-  const [nextTask,setNextTask]=useState(null);
-  const [readiness,setReadiness]=useState(null);
-
-  useEffect(()=>{
-    if(!supabase)return;
-    supabase.from("mastery").select("*").then(({data})=>{
-      const m=buildMatrix(data||[]);
-      setNextTask(pickNextTask(m));
-      setReadiness(estimateReadiness(m));
-    });
-  },[]);
-
   const currentDay = state.currentDay || 1;
   const todaysLesson = getDay(currentDay);
-  const isFriday = new Date().getDay() === 5;
+  const completed = state.completedDays || [];
+  const progressPct = Math.round(completed.length / CURRICULUM.length * 100);
+  const dailyDone = Engine.isDailyDone(state.lastDaily);
+  const isFriday = new Date().getDay() === 5; // Friday = Shabbat prep
+  const weekNum = weekOf(currentDay);
+  const weekDiscussions = SHABBAT_DISCUSSIONS[weekNum] || [];
+
+  // Check if lesson was completed today
+  const todayStr = new Date().toDateString();
+  const doneToday = state.lastDay === todayStr && completed.includes(currentDay - 1);
 
   return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:12,overflowY:"auto"}}>
     {/* Compact greeting */}
     <div style={{textAlign:"center",padding:"4px 0 0"}}>
       <h1 style={{fontSize:22,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>שלום {state.name}! 🌟</h1>
-      <div style={{fontSize:13,color:T.muted,marginTop:2}}>רצף {state.streak}🔥 · {state.correct} נכון</div>
+      <div style={{fontSize:13,color:T.muted,marginTop:2}}>יום {currentDay} מתוך {CURRICULUM.length} · רצף {state.streak}🔥</div>
     </div>
 
-    {/* HERO: Next Mastery Task */}
-    {nextTask?(()=>{
-      const book=BOOK_BY_ID[nextTask.bookId];
-      const lvl=LEVELS[nextTask.level];
-      const reasonText={continue:"המשיכי איפה שעצרת",new:"רמה חדשה — בואי נתחיל",review:"חזרה קצרה לחיזוק"}[nextTask.reason];
-      return <button onClick={()=>nav("level-quiz",{book:nextTask.bookId,level:nextTask.level})} style={{
-        background:`linear-gradient(135deg,${T.gold}22,#FF8C0011)`,
-        border:`2px solid ${T.gold}77`,
-        borderRadius:T.r.lg,padding:"22px 20px",cursor:"pointer",
-        display:"flex",flexDirection:"column",alignItems:"center",gap:6,textAlign:"center",
-        boxShadow:`0 4px 20px ${T.gold}22`,
-      }}>
-        <div style={{fontSize:11,color:T.gold,fontWeight:700,letterSpacing:1.5}}>🎯 המשימה שלך עכשיו</div>
-        <div style={{fontSize:48,animation:"float 3s ease-in-out infinite"}}>{lvl.emoji}</div>
-        <div style={{fontWeight:800,fontSize:22,color:"#fff"}}>{book?.name}</div>
-        <div style={{fontSize:15,color:T.gold,fontWeight:700}}>{lvl.name}</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>{reasonText}</div>
-        <div style={{marginTop:8,padding:"10px 24px",background:`linear-gradient(135deg,${T.gold},#FF8C00)`,borderRadius:22,color:"#1a0533",fontWeight:800,fontSize:15}}>🚀 בואי נתחיל</div>
-      </button>;
-    })():(
-      // Fallback: today's curriculum lesson
-      todaysLesson && <button onClick={()=>nav("lesson",{day:currentDay})} style={{
-        background:`linear-gradient(135deg,${todaysLesson.color}22,${todaysLesson.color}0a)`,
-        border:`2px solid ${todaysLesson.color}77`,
-        borderRadius:T.r.lg,padding:"22px 20px",cursor:"pointer",
-        display:"flex",flexDirection:"column",alignItems:"center",gap:8,textAlign:"center",
-      }}>
-        <div style={{fontSize:12,color:todaysLesson.color,fontWeight:700,letterSpacing:1.5}}>📖 השיעור של היום</div>
-        <div style={{fontSize:48,animation:"float 3s ease-in-out infinite"}}>{todaysLesson.emoji}</div>
-        <div style={{fontWeight:800,fontSize:22,color:"#fff"}}>{todaysLesson.title}</div>
-        <div style={{marginTop:8,padding:"10px 24px",background:todaysLesson.color,borderRadius:22,color:"#1a0533",fontWeight:800,fontSize:15}}>🚀 להתחיל ללמוד</div>
-      </button>
-    )}
-
-    {/* Readiness gauges */}
-    {readiness&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-      {[
-        {label:"בית ספרי",pct:readiness.school,color:"#5DFC8A"},
-        {label:"מחוזי",pct:readiness.district,color:"#FFD700"},
-        {label:"ארצי",pct:readiness.national,color:"#FF8C00"},
-        {label:"עולמי",pct:readiness.world,color:"#FF6B6B"},
-      ].map(g=><button key={g.label} onClick={()=>nav("mastery")} style={{background:"rgba(255,255,255,0.04)",borderRadius:T.r.sm,padding:"10px 6px",textAlign:"center",border:"none",cursor:"pointer",color:"#fff"}}>
-        <div style={{fontSize:18,fontWeight:800,color:g.pct>=50?g.color:T.muted}}>{g.pct}%</div>
-        <div style={{fontSize:10,color:T.muted,marginTop:2}}>{g.label}</div>
-      </button>)}
-    </div>}
+    {/* TODAY'S LESSON — THE HERO */}
+    {todaysLesson && <button onClick={()=>nav("lesson",{day:currentDay})} style={{
+      background:`linear-gradient(135deg,${todaysLesson.color}22,${todaysLesson.color}0a)`,
+      border:`2px solid ${todaysLesson.color}77`,
+      borderRadius:T.r.lg,padding:"22px 20px",cursor:"pointer",
+      display:"flex",flexDirection:"column",alignItems:"center",gap:8,textAlign:"center",
+      boxShadow:`0 4px 20px ${todaysLesson.color}22`,
+    }}>
+      <div style={{fontSize:12,color:todaysLesson.color,fontWeight:700,letterSpacing:1.5}}>📖 השיעור של היום</div>
+      <div style={{fontSize:56,animation:"float 3s ease-in-out infinite"}}>{todaysLesson.emoji}</div>
+      <div style={{fontWeight:800,fontSize:24,color:"#fff"}}>{todaysLesson.title}</div>
+      <div style={{fontSize:14,color:T.muted}}>יום {currentDay} · {todaysLesson.lesson.length} קלפים + 3 שאלות</div>
+      <div style={{marginTop:8,padding:"10px 24px",background:todaysLesson.color,borderRadius:22,color:"#1a0533",fontWeight:800,fontSize:15}}>🚀 להתחיל ללמוד</div>
+    </button>}
 
     {/* Progress bar */}
     <div style={{padding:"2px 4px"}}>
@@ -3249,6 +3210,54 @@ function TabProfile({nav}) {
 }
 
 // ── BOTTOM TAB BAR ──────────────────────────
+// ── TANAKH BOOKS REFERENCE ──────────────────
+// All 39 books for coverage tracking
+const ALL_TANAKH_BOOKS = [
+  // Torah
+  {id:"bereshit",name:"בראשית",emoji:"🌍",section:"תורה"},
+  {id:"shemot",name:"שמות",emoji:"🔥",section:"תורה"},
+  {id:"vayikra",name:"ויקרא",emoji:"🐂",section:"תורה"},
+  {id:"bamidbar",name:"במדבר",emoji:"🏕️",section:"תורה"},
+  {id:"devarim",name:"דברים",emoji:"📜",section:"תורה"},
+  // Nevi'im Rishonim
+  {id:"yehoshua",name:"יהושע",emoji:"⚔️",section:"נביאים ראשונים"},
+  {id:"shoftim",name:"שופטים",emoji:"🦁",section:"נביאים ראשונים"},
+  {id:"shmuel_a",name:"שמואל א",emoji:"👑",section:"נביאים ראשונים"},
+  {id:"shmuel_b",name:"שמואל ב",emoji:"🏛️",section:"נביאים ראשונים"},
+  {id:"melachim_a",name:"מלכים א",emoji:"💎",section:"נביאים ראשונים"},
+  {id:"melachim_b",name:"מלכים ב",emoji:"⚡",section:"נביאים ראשונים"},
+  // Nevi'im Acharonim
+  {id:"yeshayahu",name:"ישעיהו",emoji:"📖",section:"נביאים אחרונים"},
+  {id:"yirmiyahu",name:"ירמיהו",emoji:"😢",section:"נביאים אחרונים"},
+  {id:"yechezkel",name:"יחזקאל",emoji:"👁️",section:"נביאים אחרונים"},
+  {id:"hoshea",name:"הושע",emoji:"💗",section:"תרי עשר"},
+  {id:"yoel",name:"יואל",emoji:"🌾",section:"תרי עשר"},
+  {id:"amos",name:"עמוס",emoji:"🐑",section:"תרי עשר"},
+  {id:"ovadia",name:"עובדיה",emoji:"🗻",section:"תרי עשר"},
+  {id:"yona",name:"יונה",emoji:"🐋",section:"תרי עשר"},
+  {id:"micha",name:"מיכה",emoji:"🌟",section:"תרי עשר"},
+  {id:"nachum",name:"נחום",emoji:"💧",section:"תרי עשר"},
+  {id:"chavakuk",name:"חבקוק",emoji:"⚖️",section:"תרי עשר"},
+  {id:"tzefania",name:"צפניה",emoji:"🕯️",section:"תרי עשר"},
+  {id:"chagai",name:"חגי",emoji:"🔨",section:"תרי עשר"},
+  {id:"zechariah",name:"זכריה",emoji:"🌅",section:"תרי עשר"},
+  {id:"malachi",name:"מלאכי",emoji:"✨",section:"תרי עשר"},
+  // Ketuvim
+  {id:"tehilim",name:"תהילים",emoji:"🎵",section:"כתובים"},
+  {id:"mishlei",name:"משלי",emoji:"💡",section:"כתובים"},
+  {id:"iyov",name:"איוב",emoji:"😔",section:"כתובים"},
+  {id:"shir",name:"שיר השירים",emoji:"🌹",section:"כתובים"},
+  {id:"rut",name:"רות",emoji:"🌾",section:"כתובים"},
+  {id:"eicha",name:"איכה",emoji:"💧",section:"כתובים"},
+  {id:"kohelet",name:"קהלת",emoji:"⏳",section:"כתובים"},
+  {id:"esther",name:"אסתר",emoji:"👸",section:"כתובים"},
+  {id:"daniel",name:"דניאל",emoji:"🦁",section:"כתובים"},
+  {id:"ezra",name:"עזרא",emoji:"📜",section:"כתובים"},
+  {id:"nechemya",name:"נחמיה",emoji:"🧱",section:"כתובים"},
+  {id:"divrei_a",name:"דברי הימים א",emoji:"📚",section:"כתובים"},
+  {id:"divrei_b",name:"דברי הימים ב",emoji:"📚",section:"כתובים"},
+];
+
 // ── TAB: OFFICIAL QUIZ ───────────────────────
 function TabOfficial({nav}) {
   const [stats,setStats]=useState(null);
@@ -3571,263 +3580,14 @@ function CoverageMap({nav}) {
   </div>;
 }
 
-// ── LEVEL QUIZ — adaptive exercise at specific (book, level) ──
-function LevelQuiz({nav, params}) {
-  const bookId=params?.book;
-  const level=params?.level||0;
-  const book=BOOK_BY_ID[bookId];
-  const lvl=LEVELS[level];
-  const [questions,setQuestions]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [idx,setIdx]=useState(0);
-  const [sel,setSel]=useState(null);
-  const [answered,setAnswered]=useState(false);
-  const [correct,setCorrect]=useState(0);
-  const [done,setDone]=useState(false);
-  const [newlyMastered,setNewlyMastered]=useState(false);
-  const TARGET_QUESTIONS=8;
-
-  useEffect(()=>{
-    const load=async()=>{
-      let pool=[];
-      if(level===5){
-        // Real official questions
-        if(supabase){
-          const{data}=await supabase.from("official_questions").select("*").eq("book",bookId).limit(20);
-          pool=(data||[]).map(q=>({
-            id:q.id,
-            q:q.question,
-            options:q.options||[],
-            a:q.answer_text,
-            exp:q.source?`📖 מקור: ${q.source}`:"",
-            isOfficial:true,
-          }));
-        }
-      } else {
-        // Use existing DB or generate via AI
-        const dbQs=DB[bookId]||[];
-        pool=Engine.shuffle([...dbQs]).slice(0,TARGET_QUESTIONS).map(q=>{
-          const shuffled=Engine.shuffleOptions(q);
-          return{id:q.id,q:shuffled.q,options:shuffled.o||[],a:shuffled.a,exp:q.exp||"",hint:q.hint};
-        });
-      }
-      // Shuffle and limit
-      const shuffled=pool.sort(()=>Math.random()-0.5).slice(0,TARGET_QUESTIONS);
-      setQuestions(shuffled);
-      setLoading(false);
-    };
-    load();
-  },[bookId,level]);
-
-  if(!book)return<div style={{padding:40}}>ספר לא נמצא</div>;
-
-  if(loading)return<div style={{padding:60,textAlign:"center"}}><div style={{fontSize:48,animation:"pulse 1.2s infinite"}}>{lvl.emoji}</div><div style={{marginTop:12,color:T.muted}}>טוען תרגיל...</div></div>;
-
-  if(!questions.length)return<div style={{padding:40,textAlign:"center"}}>
-    <div style={{fontSize:48,marginBottom:12}}>📭</div>
-    <p style={{color:T.muted}}>אין שאלות זמינות לרמה זו ב{book.name} כרגע</p>
-    <Btn onClick={()=>nav("home")}>חזרה</Btn>
-  </div>;
-
-  if(done){
-    const pct=Math.round(correct/questions.length*100);
-    const passed=pct>=lvl.masterPct;
-    return<div style={{padding:24,textAlign:"center"}}>
-      <div style={{fontSize:80,animation:"float 2s ease-in-out infinite"}}>{newlyMastered?"🏆":passed?"⭐":pct>=50?"💪":"📚"}</div>
-      {newlyMastered?<>
-        <h2 style={{fontSize:26,color:T.success,margin:"8px 0"}}>שולטת ב{lvl.name}!</h2>
-        <div style={{fontSize:14,color:T.muted,marginBottom:8}}>{book.emoji} {book.name}</div>
-        <div style={{padding:"14px 16px",background:`${T.success}11`,border:`1px solid ${T.success}44`,borderRadius:T.r.md,marginBottom:14}}>
-          <div style={{fontSize:14,color:T.success}}>🎉 הרמה הבאה נפתחה!</div>
-          {level<LEVELS.length-1&&<div style={{fontSize:13,color:T.muted,marginTop:4}}>{LEVELS[level+1].emoji} {LEVELS[level+1].name}</div>}
-        </div>
-      </>:<>
-        <h2 style={{fontSize:24,color:passed?T.success:T.gold,margin:"8px 0"}}>{passed?"מעולה!":"כל הכבוד"}</h2>
-        <div style={{fontSize:48,fontWeight:800,color:passed?T.success:T.gold}}>{correct}/{questions.length}</div>
-        <div style={{color:T.muted,fontSize:13}}>{pct}% · {book.name} · {lvl.name}</div>
-        {!passed&&<div style={{fontSize:12,color:T.muted,marginTop:8}}>צריך {lvl.masterPct}% כדי לעבור לרמה הבאה</div>}
-      </>}
-      <div style={{display:"flex",gap:8,marginTop:18}}>
-        <Btn onClick={()=>{setIdx(0);setCorrect(0);setSel(null);setAnswered(false);setDone(false);setNewlyMastered(false);}} style={{flex:1,marginBottom:0}}>🔄 שוב</Btn>
-        <Btn v="ghost" onClick={()=>nav("mastery")} style={{flex:1,marginBottom:0}}>📊 מפת ידע</Btn>
-      </div>
-    </div>;
-  }
-
-  const q=questions[idx];
-  if(!q)return null;
-
-  const answer=async(opt)=>{
-    if(answered)return;
-    Audio.tap();
-    const ok=opt===q.a;
-    setSel(opt);setAnswered(true);
-    if(ok){setCorrect(c=>c+1);Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
-    // Record to mastery system
-    if(supabase){
-      const result=await recordAttempt(supabase,bookId,level,ok);
-      if(result?.newlyMastered)setNewlyMastered(true);
-    }
-    if(q.isOfficial&&supabase){
-      supabase.from("official_attempts").insert({question_id:q.id,correct:ok,user_answer:opt}).then(()=>{});
-    }
-    logQuizResult(q.id,bookId,ok,false,0);
-  };
-
-  const next=()=>{
-    if(idx>=questions.length-1){setDone(true);return;}
-    setIdx(i=>i+1);setSel(null);setAnswered(false);
-  };
-
-  const optState=(opt)=>!answered?"default":opt===q.a?"correct":opt===sel?"wrong":"default";
-
-  return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-      <div style={{flex:1,display:"flex",gap:3}}>
-        {questions.map((_,i)=><div key={i} style={{flex:1,height:5,borderRadius:3,background:i<idx?T.success:i===idx?T.gold:"rgba(255,255,255,0.1)"}}/>)}
-      </div>
-      <span style={{fontSize:12,color:T.muted}}>{idx+1}/{questions.length}</span>
-    </div>
-    <div style={{textAlign:"center",marginBottom:8}}>
-      <div style={{fontSize:11,color:T.gold,fontWeight:700}}>{book.emoji} {book.name} · {lvl.emoji} {lvl.name}</div>
-    </div>
-    <Card style={{padding:"20px 18px"}}>
-      <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.7,margin:0,textAlign:"right"}}>{q.q}</h2>
-      {q.hint&&!answered&&<div style={{fontSize:11,color:T.muted,marginTop:8,textAlign:"right"}}>💡 {q.hint}</div>}
-    </Card>
-    <div style={{marginTop:"auto"}}>
-      {q.options.map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
-      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
-        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
-        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{sel===q.a?"":<>התשובה: <strong>{q.a}</strong>. </>}{q.exp}</div>
-        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
-      </div>}
-    </div>
-  </div>;
-}
-
-// ── MASTERY DASHBOARD — heatmap of book × level ──
-function MasteryDashboard({nav}) {
-  const [matrix,setMatrix]=useState(null);
-  const [progress,setProgress]=useState(null);
-  const [readiness,setReadiness]=useState(null);
-  const [nextTask,setNextTask]=useState(null);
-
-  useEffect(()=>{
-    if(!supabase)return;
-    supabase.from("mastery").select("*").then(({data})=>{
-      const m=buildMatrix(data||[]);
-      setMatrix(m);
-      setProgress(overallProgress(m));
-      setReadiness(estimateReadiness(m));
-      setNextTask(pickNextTask(m));
-    });
-  },[]);
-
-  if(!matrix)return<div style={{padding:60,textAlign:"center"}}><div style={{fontSize:48}}>🧠</div><div style={{marginTop:12,color:T.muted}}>בונה את מפת הידע...</div></div>;
-
-  // Color for cell based on status
-  const cellColor=(cell)=>{
-    if(cell.status==="locked")return"rgba(255,255,255,0.04)";
-    if(cell.status==="unlocked"&&cell.attempts===0)return"rgba(255,255,255,0.08)";
-    if(cell.status==="mastered")return"#5DFC8A";
-    // in-progress: gradient red→yellow→green
-    const s=cell.score;
-    if(s>=70)return`rgba(93,252,138,${0.3+s/200})`;
-    if(s>=40)return`rgba(255,215,0,${0.3+s/200})`;
-    return`rgba(255,107,107,${0.3+s/200})`;
-  };
-
-  const cellBorder=(cell)=>{
-    if(cell.status==="locked")return"rgba(255,255,255,0.05)";
-    if(cell.status==="mastered")return"#5DFC8A";
-    if(cell.status==="in-progress"&&cell.score<40)return"#FF6B6B";
-    return"rgba(255,215,0,0.4)";
-  };
-
-  // Show only books that are in our focus or have any data
-  const showBooks=ALL_TANAKH_BOOKS.filter(b=>FOCUS_ORDER.includes(b.id)||(matrix[b.id]&&Object.values(matrix[b.id]).some(c=>c.attempts>0)));
-
-  return<div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto",gap:12}}>
-    <div style={{textAlign:"center",padding:"4px 0"}}>
-      <div style={{fontSize:36}}>🧠</div>
-      <h2 style={{fontSize:20,fontWeight:900,margin:"4px 0 2px"}}>מפת הידע של לייה</h2>
-      <div style={{fontSize:12,color:T.muted}}>{progress?.mastered}/{progress?.totalCells} תאים נשלטים · {progress?.activePct}% מתחיל</div>
-    </div>
-
-    {/* Next task suggestion */}
-    {nextTask&&<button onClick={()=>nav("level-quiz",{book:nextTask.bookId,level:nextTask.level})} style={{
-      background:`linear-gradient(135deg,${T.gold}22,${T.gold}11)`,
-      border:`2px solid ${T.gold}66`,
-      borderRadius:T.r.lg,padding:"16px",cursor:"pointer",
-      display:"flex",alignItems:"center",gap:14,boxShadow:`0 4px 16px ${T.gold}22`,
-    }}>
-      <div style={{fontSize:36}}>{LEVELS[nextTask.level].emoji}</div>
-      <div style={{textAlign:"right",flex:1}}>
-        <div style={{fontSize:11,color:T.gold,fontWeight:700}}>המשימה הבאה שלך</div>
-        <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>{BOOK_BY_ID[nextTask.bookId]?.name} · {LEVELS[nextTask.level].name}</div>
-        <div style={{fontSize:12,color:T.muted,marginTop:2}}>{LEVELS[nextTask.level].desc}</div>
-      </div>
-      <div style={{fontSize:20,color:T.gold}}>◀</div>
-    </button>}
-
-    {/* Readiness gauges */}
-    {readiness&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-      {[
-        {label:"בית ספרי",pct:readiness.school,color:"#5DFC8A"},
-        {label:"מחוזי",pct:readiness.district,color:"#FFD700"},
-        {label:"ארצי",pct:readiness.national,color:"#FF8C00"},
-        {label:"עולמי",pct:readiness.world,color:"#FF6B6B"},
-      ].map(g=><div key={g.label} style={{background:"rgba(255,255,255,0.04)",borderRadius:T.r.sm,padding:"10px 6px",textAlign:"center"}}>
-        <div style={{fontSize:18,fontWeight:800,color:g.pct>=50?g.color:T.muted}}>{g.pct}%</div>
-        <div style={{fontSize:10,color:T.muted,marginTop:2}}>{g.label}</div>
-      </div>)}
-    </div>}
-
-    {/* The heatmap */}
-    <div>
-      <div style={{fontSize:13,fontWeight:700,color:"#fff",textAlign:"right",marginBottom:8}}>📊 מטריצה: ספר × רמה</div>
-      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:T.r.md,padding:8,overflowX:"auto"}}>
-        {/* Header row */}
-        <div style={{display:"grid",gridTemplateColumns:"100px repeat(6,1fr)",gap:4,marginBottom:4,direction:"rtl"}}>
-          <div style={{fontSize:10,color:T.muted}}></div>
-          {LEVELS.map(l=><div key={l.n} style={{fontSize:11,color:T.muted,textAlign:"center",fontWeight:700}}>{l.emoji}<br/>{l.name.slice(0,4)}</div>)}
-        </div>
-        {/* Rows per book */}
-        {showBooks.map(book=><div key={book.id} style={{display:"grid",gridTemplateColumns:"100px repeat(6,1fr)",gap:4,marginBottom:4,direction:"rtl",alignItems:"center"}}>
-          <div style={{fontSize:12,fontWeight:600,color:"#fff",display:"flex",alignItems:"center",gap:4}}>
-            <span>{book.emoji}</span><span>{book.name}</span>
-          </div>
-          {LEVELS.map(l=>{
-            const cell=matrix[book.id]?.[l.n]||{status:"locked",score:0,attempts:0};
-            return<button key={l.n} onClick={()=>cell.status!=="locked"&&nav("level-quiz",{book:book.id,level:l.n})} disabled={cell.status==="locked"} style={{
-              height:36,borderRadius:6,background:cellColor(cell),border:`1.5px solid ${cellBorder(cell)}`,
-              display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
-              color:cell.status==="mastered"?"#1a0533":cell.status==="locked"?T.muted:"#fff",
-              cursor:cell.status==="locked"?"default":"pointer",opacity:cell.status==="locked"?0.4:1,
-            }}>
-              {cell.status==="mastered"?"✓":cell.status==="locked"?"🔒":cell.attempts>0?`${Math.round(cell.score)}%`:"·"}
-            </button>;
-          })}
-        </div>)}
-      </div>
-    </div>
-
-    {/* Legend */}
-    <div style={{fontSize:11,color:T.muted,textAlign:"right",lineHeight:1.7}}>
-      🔒 נעול · ✓ נשלט · 70%+ ירוק · 40%+ צהוב · &lt;40% אדום
-    </div>
-  </div>;
-}
-
 const TABS=[
   {id:"home",emoji:"🏠",label:"בית"},
-  {id:"mastery",emoji:"🧠",label:"ידע"},
+  {id:"path",emoji:"🗺️",label:"המסע"},
   {id:"official",emoji:"📜",label:"חידון"},
   {id:"games",emoji:"🎮",label:"משחקים"},
   {id:"profile",emoji:"👤",label:"שלי"},
 ];
-const TAB_SCREENS={home:TabHome,mastery:MasteryDashboard,official:TabOfficial,games:TabGames,profile:TabProfile};
+const TAB_SCREENS={home:TabHome,path:CurriculumPath,official:TabOfficial,games:TabGames,profile:TabProfile};
 
 function Router({onLauncher}) {
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
