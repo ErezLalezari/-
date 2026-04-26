@@ -839,6 +839,17 @@ function useReminders(enabled) {
 }
 
 // ─────────────────────────────────────────────
+// [7.5] HEBREW TEXT UTILITIES
+// ─────────────────────────────────────────────
+// Strip niqud (Hebrew vowel points) and normalize whitespace
+// Critical for displaying clean text from PDF-extracted questions
+const NIQUD_RANGE = /[֑-ֽֿׁ-ׂׄ-ׇׅ]/g;
+function cleanHebrew(text) {
+  if (!text || typeof text !== "string") return text;
+  return text.replace(NIQUD_RANGE, "").replace(/\s+/g, " ").trim();
+}
+
+// ─────────────────────────────────────────────
 // [8] DESIGN TOKENS
 // ─────────────────────────────────────────────
 const T = {
@@ -980,7 +991,7 @@ function AnswerOpt({opt,idx,state:st,onClick}) {
   }} onMouseEnter={e=>{if(st==="default")e.currentTarget.style.background="rgba(255,255,255,0.09)";}}
      onMouseLeave={e=>{if(st==="default")e.currentTarget.style.background=c.bg;}}>
     <span style={{fontSize:20,minWidth:30,textAlign:"center",fontWeight:700}}>{icons[st]||icons.default}</span>
-    <span style={{flex:1}}>{opt}</span>
+    <span style={{flex:1}}>{typeof opt==="string"?cleanHebrew(opt):opt}</span>
   </button>;
 }
 
@@ -3331,23 +3342,65 @@ function TabOfficial({nav}) {
 // ── REAL QUIZ — practice with official questions ──
 function RealQuiz({nav, params, online}) {
   const stage=params?.stage||"school";
+  const [phase,setPhase]=useState("intro"); // intro → learn → quiz
   const [questions,setQuestions]=useState([]);
   const [loading,setLoading]=useState(true);
   const [idx,setIdx]=useState(0);
   const [sel,setSel]=useState(null);
   const [answered,setAnswered]=useState(false);
   const [correct,setCorrect]=useState(0);
+  // Learning previews — show 3-5 quick facts before quiz
+  const [learnIdx,setLearnIdx]=useState(0);
+  const [learnCards,setLearnCards]=useState(null);
+  const [learnLoading,setLearnLoading]=useState(false);
 
   useEffect(()=>{
     if(!supabase)return;
     supabase.from("official_questions").select("*").eq("stage",stage).limit(50).then(({data})=>{
       if(!data){setLoading(false);return;}
-      // Shuffle
-      const shuffled=[...data].sort(()=>Math.random()-0.5).slice(0,15);
+      const shuffled=[...data].sort(()=>Math.random()-0.5).slice(0,10);
       setQuestions(shuffled);
       setLoading(false);
-    });
+    }).catch(e=>{console.warn("[RealQuiz]",e?.message);setLoading(false);});
   },[stage]);
+
+  // Generate learning preview cards using AI based on the actual questions
+  const generateLearnCards=async()=>{
+    if(!questions.length||!online) return;
+    setLearnLoading(true);
+    const sampleQs=questions.slice(0,5).map((q,i)=>`${i+1}. ${cleanHebrew(q.question)}\nתשובה: ${cleanHebrew(q.answer_text)}\nמקור: ${q.source||"?"}`).join("\n\n");
+    const prompt=`לפניך 5 שאלות מחידון תנ"ך. הילדה לייה (בת 10) עומדת לקבל שאלות דומות. צרי לה 5 קלפי לימוד מקדימים שיעזרו לה לדעת את התשובות.
+
+השאלות:
+${sampleQs}
+
+לכל שאלה צרי קלף לימוד שמסביר את הרקע, ההקשר, והתשובה — כך שכשהיא תקבל את השאלה היא תדע לענות.
+
+החזירי JSON בלבד:
+[
+  {"title":"כותרת קצרה","fact":"3-5 משפטים פשוטים המסבירים את הנושא","verse":"ציטוט פסוק (אופציונלי)","emoji":"🌟"}
+]
+
+חשוב:
+- שפה פשוטה לילדה בת 10
+- התמקדות בעובדות שמופיעות בתשובות
+- 5 קלפים בדיוק
+- ללא ניקוד מיותר
+- ללא טקסט נוסף לפני או אחרי`;
+    try{
+      const raw=await callAI(prompt,2000);
+      const clean=raw.replace(/```json|```/g,"").trim();
+      const arrMatch=clean.match(/\[[\s\S]*\]/);
+      const parsed=arrMatch?JSON.parse(arrMatch[0]):null;
+      if(parsed&&parsed.length>0) setLearnCards(parsed);
+      else setLearnCards([{title:"מתחילים",fact:"קראי כל שאלה היטב, הסתכלי על האפשרויות, ובחרי את הנכונה.",emoji:"🎯"}]);
+    }catch(e){
+      setLearnCards([{title:"מתחילים",fact:"בהצלחה!",emoji:"🎯"}]);
+    }
+    setLearnLoading(false);
+    setPhase("learn");
+    setLearnIdx(0);
+  };
 
   const stageNames={school:"בית ספרי",district:"מחוזי",national:"ארצי",world:"עולמי"};
   const stageColors={school:"#5DFC8A",district:"#FFD700",national:"#FF8C00",world:"#FF6B6B"};
@@ -3355,6 +3408,61 @@ function RealQuiz({nav, params, online}) {
 
   if(loading)return<div style={{padding:60,textAlign:"center",color:T.muted}}><div style={{fontSize:48,animation:"pulse 1.2s infinite"}}>📜</div><div style={{marginTop:12}}>טוען שאלות אמיתיות...</div></div>;
   if(!questions.length)return<div style={{padding:40,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📭</div><p style={{color:T.muted}}>אין שאלות בשלב זה</p><Btn onClick={()=>nav("home")}>חזרה</Btn></div>;
+
+  // ── INTRO PHASE — before quiz, give learn-first option ──
+  if(phase==="intro"){
+    return<div style={{display:"flex",flexDirection:"column",height:"100%",padding:"10px 4px",gap:14}}>
+      <div style={{textAlign:"center",padding:"20px 0 4px"}}>
+        <div style={{fontSize:64,animation:"float 3s ease-in-out infinite"}}>📜</div>
+        <h2 style={{color,fontSize:24,margin:"8px 0 4px",fontWeight:900}}>חידון {stageNames[stage]}</h2>
+        <p style={{color:T.muted,fontSize:14,margin:0}}>{questions.length} שאלות אמיתיות מהחידון הרשמי</p>
+      </div>
+      <div style={{padding:"14px 18px",background:"rgba(255,215,0,0.06)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:T.r.md,fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",textAlign:"right"}}>
+        💡 השאלות אמיתיות מהשנים <strong>{[...new Set(questions.map(q=>q.year))].sort().slice(0,3).join(", ")}</strong>. אם לא למדת את החומר, אני יכול ללמד אותך קצת לפני שנתחיל!
+      </div>
+      <div style={{flex:1}}/>
+      <button onClick={generateLearnCards} disabled={learnLoading||!online} style={{
+        background:`linear-gradient(135deg,${T.gold},#FF8C00)`,
+        border:"none",borderRadius:T.r.md,padding:"16px",cursor:learnLoading?"default":"pointer",
+        color:"#1a0533",fontWeight:800,fontSize:16,opacity:learnLoading?0.6:1,
+      }}>{learnLoading?"מכין חומר לימוד...":"📚 קודם תלמדי אותי (מומלץ!)"}</button>
+      <button onClick={()=>setPhase("quiz")} style={{
+        background:"rgba(255,255,255,0.06)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",
+        cursor:"pointer",color:"#fff",fontWeight:700,fontSize:15,
+      }}>🎯 דלג ישר לשאלות</button>
+    </div>;
+  }
+
+  // ── LEARN PHASE — show context cards ──
+  if(phase==="learn"&&learnCards){
+    const card=learnCards[learnIdx];
+    if(!card){
+      // Done learning
+      return<div style={{padding:30,textAlign:"center"}}>
+        <div style={{fontSize:64,animation:"float 2s ease-in-out infinite"}}>🎓</div>
+        <h2 style={{color,fontSize:24,margin:"8px 0"}}>סיימת ללמוד!</h2>
+        <p style={{color:T.muted,fontSize:14,marginBottom:20}}>עכשיו את מוכנה לחידון</p>
+        <Btn onClick={()=>setPhase("quiz")} style={{marginBottom:8}}>🚀 קדימה לחידון!</Btn>
+        <Btn v="ghost" onClick={()=>setLearnIdx(0)}>🔄 לקרוא שוב</Btn>
+      </div>;
+    }
+    return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{display:"flex",gap:4,marginBottom:14}}>
+        {learnCards.map((_,i)=><div key={i} style={{flex:1,height:5,borderRadius:3,background:i<=learnIdx?color:"rgba(255,255,255,0.1)"}}/>)}
+      </div>
+      <div style={{textAlign:"center",fontSize:11,color,fontWeight:700,marginBottom:8,letterSpacing:1}}>📚 קלף {learnIdx+1}/{learnCards.length}</div>
+      <Card style={{padding:"24px 20px",borderColor:`${color}44`,flex:1,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:12}}>{card.emoji||"📖"}</div>
+        <h2 style={{fontSize:20,fontWeight:800,color:"#fff",textAlign:"center",margin:"0 0 12px"}}>{card.title}</h2>
+        <div style={{fontSize:16,lineHeight:1.9,color:"rgba(255,255,255,0.9)",textAlign:"right",fontWeight:500}}>{card.fact}</div>
+        {card.verse&&<div style={{marginTop:14,padding:"10px 14px",background:`${color}11`,borderRight:`3px solid ${color}`,fontSize:14,color,fontStyle:"italic",textAlign:"right"}}>"{card.verse}"</div>}
+      </Card>
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button onClick={()=>setLearnIdx(Math.max(0,learnIdx-1))} disabled={learnIdx===0} style={{flex:1,background:"rgba(255,255,255,0.06)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:learnIdx===0?T.muted:"#fff",cursor:learnIdx===0?"default":"pointer",fontWeight:700,fontSize:15,opacity:learnIdx===0?0.3:1}}>→ הקודם</button>
+        <button onClick={()=>setLearnIdx(learnIdx+1)} style={{flex:2,background:`linear-gradient(135deg,${color},${color}cc)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",fontWeight:800,fontSize:15,cursor:"pointer"}}>{learnIdx>=learnCards.length-1?"🚀 בואי לחידון":"← הבא"}</button>
+      </div>
+    </div>;
+  }
 
   const q=questions[idx];
   if(!q){
@@ -3372,7 +3480,7 @@ function RealQuiz({nav, params, online}) {
   const answer=async(opt)=>{
     if(answered)return;
     Audio.tap();
-    const ok=opt===q.answer_text;
+    const ok=cleanHebrew(opt)===cleanHebrew(q.answer_text);
     setSel(opt);setAnswered(true);
     if(ok){setCorrect(c=>c+1);Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
     // Log attempt
@@ -3381,7 +3489,7 @@ function RealQuiz({nav, params, online}) {
     }).then(()=>{});
   };
   const next=()=>{setIdx(i=>i+1);setSel(null);setAnswered(false);};
-  const optState=(opt)=>!answered?"default":opt===q.answer_text?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":cleanHebrew(opt)===cleanHebrew(q.answer_text)?"correct":opt===sel?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -3394,14 +3502,14 @@ function RealQuiz({nav, params, online}) {
       <div style={{fontSize:11,color,fontWeight:700,letterSpacing:1.2}}>📜 חידון {stageNames[stage]} · {q.year}</div>
     </div>
     <Card style={{padding:"22px 18px"}}>
-      <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.7,margin:0,textAlign:"right"}}>{q.question}</h2>
+      <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
       {q.source&&!answered&&<div style={{fontSize:11,color:T.muted,marginTop:8,textAlign:"left"}}>📖 {q.source}</div>}
     </Card>
     <div style={{marginTop:"auto"}}>
       {(q.options||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
       {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.answer_text?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.answer_text?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
         <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.answer_text?"🌟":"💪"}</div>
-        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>התשובה הנכונה: <strong>{q.answer_text}</strong></div>
+        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>התשובה הנכונה: <strong>{cleanHebrew(q.answer_text)}</strong></div>
         {q.source&&<div style={{fontSize:12,color:T.muted,marginTop:6,textAlign:"right"}}>📖 מקור: {q.source}</div>}
         <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.answer_text?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
       </div>}
@@ -3438,7 +3546,7 @@ function MockExam({nav}) {
   if(loading)return<div style={{padding:60,textAlign:"center"}}><div style={{fontSize:48}}>⏱️</div><div style={{marginTop:12,color:T.muted}}>מכין מבחן...</div></div>;
 
   if(done){
-    const correct=questions.filter(q=>answers[q.id]===q.answer_text).length;
+    const correct=questions.filter(q=>cleanHebrew(answers[q.id])===cleanHebrew(q.answer_text)).length;
     const pct=Math.round(correct/questions.length*100);
     return<div style={{padding:24,textAlign:"center",overflowY:"auto",height:"100%"}}>
       <div style={{fontSize:80}}>{pct>=80?"🏆":pct>=60?"⭐":"💪"}</div>
@@ -3479,7 +3587,7 @@ function MockExam({nav}) {
 
     <Card style={{padding:"18px 16px"}}>
       <div style={{fontSize:11,color:T.gold,fontWeight:700,marginBottom:6,textAlign:"center"}}>📜 שאלה {idx+1} · חידון {q.year}</div>
-      <h2 style={{fontSize:17,fontWeight:700,lineHeight:1.7,margin:0,textAlign:"right"}}>{q.question}</h2>
+      <h2 style={{fontSize:17,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
     </Card>
 
     <div style={{flex:1,overflow:"auto",marginTop:10}}>
