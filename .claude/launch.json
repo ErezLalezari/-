@@ -2,10 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "leya-quiz",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["react-scripts", "start"],
-      "port": 3000
+      "name": "leya-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 3000,
+      "cwd": "/Users/erez.lalezari/Repos/Projects/leya-app"
     }
   ]
 }

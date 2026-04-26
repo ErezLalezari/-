@@ -25,6 +25,26 @@ import { LEVELS, FOCUS_ORDER, buildMatrix, pickNextTask, overallProgress, estima
 // ─────────────────────────────────────────────
 // SUPABASE CLIENT
 // ─────────────────────────────────────────────
+// Module-level caches to avoid repeated Supabase fetches
+const SupabaseCache = {
+  officialQuestions: null,
+  officialQuestionsByStage: {},
+  officialQuestionsByBook: {},
+  officialBookCounts: null,
+  mastery: null,
+  masteryFetchedAt: 0,
+  // Mastery cache TTL: 30 seconds (so it refreshes after a quiz)
+  invalidate(key){ this[key]=null; if(key==="mastery") this.masteryFetchedAt=0; },
+  invalidateAll(){
+    this.officialQuestions=null;
+    this.officialQuestionsByStage={};
+    this.officialQuestionsByBook={};
+    this.officialBookCounts=null;
+    this.mastery=null;
+    this.masteryFetchedAt=0;
+  },
+};
+
 const supabase = createClient(
   "https://mibqnkhvbgoavwamhmnp.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"
@@ -1845,7 +1865,7 @@ function FeedbackBtn({screen}){
     setLoading(false);
   };
   if(!supabase)return null;
-  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:72,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:40,height:40,fontSize:18,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
+  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:72,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:48,height:48,fontSize:20,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
   {open&&<div style={{position:'fixed',bottom:120,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
     <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:'#FFD700'}}>💬 ספרי לנו</div>
     {sent?<div style={{color:'#5DFC8A',textAlign:'center'}}>נשלח תודה</div>:<>
@@ -3840,13 +3860,23 @@ function MasteryDashboard({nav}) {
 
   useEffect(()=>{
     if(!supabase)return;
-    supabase.from("mastery").select("*").then(({data})=>{
+    // Use cache if fresh (< 30s old)
+    const cacheAge=Date.now()-SupabaseCache.masteryFetchedAt;
+    if(SupabaseCache.mastery&&cacheAge<30000){
+      const m=buildMatrix(SupabaseCache.mastery);
+      setMatrix(m);setProgress(overallProgress(m));setReadiness(estimateReadiness(m));setNextTask(pickNextTask(m));
+      return;
+    }
+    supabase.from("mastery").select("*").then(({data,error})=>{
+      if(error){console.warn("[mastery]",error.message);return;}
+      SupabaseCache.mastery=data||[];
+      SupabaseCache.masteryFetchedAt=Date.now();
       const m=buildMatrix(data||[]);
       setMatrix(m);
       setProgress(overallProgress(m));
       setReadiness(estimateReadiness(m));
       setNextTask(pickNextTask(m));
-    });
+    }).catch(e=>console.warn("[mastery] error:",e?.message));
   },[]);
 
   if(!matrix)return<div style={{padding:60,textAlign:"center"}}><div style={{fontSize:48}}>🧠</div><div style={{marginTop:12,color:T.muted}}>בונה את מפת הידע...</div></div>;
@@ -3926,7 +3956,7 @@ function MasteryDashboard({nav}) {
           {LEVELS.map(l=>{
             const cell=matrix[book.id]?.[l.n]||{status:"locked",score:0,attempts:0};
             return<button key={l.n} onClick={()=>cell.status!=="locked"&&nav("level-quiz",{book:book.id,level:l.n})} disabled={cell.status==="locked"} style={{
-              height:36,borderRadius:6,background:cellColor(cell),border:`1.5px solid ${cellBorder(cell)}`,
+              height:44,minWidth:44,borderRadius:8,background:cellColor(cell),border:`1.5px solid ${cellBorder(cell)}`,
               display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
               color:cell.status==="mastered"?"#1a0533":cell.status==="locked"?T.muted:"#fff",
               cursor:cell.status==="locked"?"default":"pointer",opacity:cell.status==="locked"?0.4:1,
@@ -3975,7 +4005,7 @@ function Router({onLauncher}) {
   const isSubScreen=!!subScreen;
   const SubComp=isSubScreen?(SCREENS[subScreen.screen]||null):null;
 
-  return <div style={{height:"100dvh",maxHeight:"-webkit-fill-available",display:"flex",flexDirection:"column",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",position:"relative",overflow:"hidden"}}>
+  return <div style={{height:"100vh",minHeight:"100dvh",maxHeight:"-webkit-fill-available",display:"flex",flexDirection:"column",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",position:"relative",overflow:"hidden"}}>
     <OfflineBanner online={online}/>
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,pointerEvents:"none",background:"radial-gradient(ellipse at 20% 20%,rgba(255,215,0,0.05) 0%,transparent 55%),radial-gradient(ellipse at 80% 80%,rgba(78,205,196,0.04) 0%,transparent 55%)",zIndex:0}}/>
     <style>{`
@@ -3995,7 +4025,7 @@ function Router({onLauncher}) {
       {isSubScreen
         ?<><SubComp nav={nav} params={subScreen.params} online={online} goBack={goBack}/>
           {/* Floating back button on sub-screens */}
-          <button onClick={goBack} style={{position:"fixed",top:10,right:10,height:40,borderRadius:20,background:"rgba(10,8,24,0.95)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"0 14px 0 10px",fontSize:14,fontWeight:700,color:T.gold,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕ חזרה</button>
+          <button onClick={goBack} style={{position:"fixed",top:10,right:10,minHeight:44,borderRadius:22,background:"rgba(10,8,24,0.95)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"8px 16px 8px 12px",fontSize:14,fontWeight:700,color:T.gold,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕ חזרה</button>
         </>
         :TAB_SCREENS[tab]
           ?React.createElement(TAB_SCREENS[tab],{nav,online})
@@ -4029,7 +4059,7 @@ function Launcher({onSelect}) {
   const hour=new Date().getHours();
   const greeting=hour<12?"בוקר טוב":hour<17?"צהריים טובים":hour<21?"ערב טוב":"לילה טוב";
 
-  return <div style={{minHeight:"100dvh",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",display:"flex",flexDirection:"column",padding:"0 16px env(safe-area-inset-bottom,16px)"}}>
+  return <div style={{minHeight:"100vh",height:"100dvh",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",display:"flex",flexDirection:"column",padding:"0 16px env(safe-area-inset-bottom,16px)"}}>
     <style>{`
       *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
       html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#0a0818;}
