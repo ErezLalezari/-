@@ -1,1 +1,5 @@
 node_modules/
+
+# Bible quiz archive — large local data, not for repo
+data/quiz-archive/pdfs/
+data/quiz-archive/text/

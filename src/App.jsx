@@ -2790,6 +2790,7 @@ const SCREENS = {
   glossary:Glossary, parent:Parent, summary:ParentSummary, teacher:TeacherDash,
   fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
   lesson:DailyLesson,
+  realquiz:RealQuiz, mockexam:MockExam, coverage:CoverageMap,
 };
 
 // ── TAB: HOME ───────────────────────────────
@@ -3209,14 +3210,384 @@ function TabProfile({nav}) {
 }
 
 // ── BOTTOM TAB BAR ──────────────────────────
+// ── TANAKH BOOKS REFERENCE ──────────────────
+// All 39 books for coverage tracking
+const ALL_TANAKH_BOOKS = [
+  // Torah
+  {id:"bereshit",name:"בראשית",emoji:"🌍",section:"תורה"},
+  {id:"shemot",name:"שמות",emoji:"🔥",section:"תורה"},
+  {id:"vayikra",name:"ויקרא",emoji:"🐂",section:"תורה"},
+  {id:"bamidbar",name:"במדבר",emoji:"🏕️",section:"תורה"},
+  {id:"devarim",name:"דברים",emoji:"📜",section:"תורה"},
+  // Nevi'im Rishonim
+  {id:"yehoshua",name:"יהושע",emoji:"⚔️",section:"נביאים ראשונים"},
+  {id:"shoftim",name:"שופטים",emoji:"🦁",section:"נביאים ראשונים"},
+  {id:"shmuel_a",name:"שמואל א",emoji:"👑",section:"נביאים ראשונים"},
+  {id:"shmuel_b",name:"שמואל ב",emoji:"🏛️",section:"נביאים ראשונים"},
+  {id:"melachim_a",name:"מלכים א",emoji:"💎",section:"נביאים ראשונים"},
+  {id:"melachim_b",name:"מלכים ב",emoji:"⚡",section:"נביאים ראשונים"},
+  // Nevi'im Acharonim
+  {id:"yeshayahu",name:"ישעיהו",emoji:"📖",section:"נביאים אחרונים"},
+  {id:"yirmiyahu",name:"ירמיהו",emoji:"😢",section:"נביאים אחרונים"},
+  {id:"yechezkel",name:"יחזקאל",emoji:"👁️",section:"נביאים אחרונים"},
+  {id:"hoshea",name:"הושע",emoji:"💗",section:"תרי עשר"},
+  {id:"yoel",name:"יואל",emoji:"🌾",section:"תרי עשר"},
+  {id:"amos",name:"עמוס",emoji:"🐑",section:"תרי עשר"},
+  {id:"ovadia",name:"עובדיה",emoji:"🗻",section:"תרי עשר"},
+  {id:"yona",name:"יונה",emoji:"🐋",section:"תרי עשר"},
+  {id:"micha",name:"מיכה",emoji:"🌟",section:"תרי עשר"},
+  {id:"nachum",name:"נחום",emoji:"💧",section:"תרי עשר"},
+  {id:"chavakuk",name:"חבקוק",emoji:"⚖️",section:"תרי עשר"},
+  {id:"tzefania",name:"צפניה",emoji:"🕯️",section:"תרי עשר"},
+  {id:"chagai",name:"חגי",emoji:"🔨",section:"תרי עשר"},
+  {id:"zechariah",name:"זכריה",emoji:"🌅",section:"תרי עשר"},
+  {id:"malachi",name:"מלאכי",emoji:"✨",section:"תרי עשר"},
+  // Ketuvim
+  {id:"tehilim",name:"תהילים",emoji:"🎵",section:"כתובים"},
+  {id:"mishlei",name:"משלי",emoji:"💡",section:"כתובים"},
+  {id:"iyov",name:"איוב",emoji:"😔",section:"כתובים"},
+  {id:"shir",name:"שיר השירים",emoji:"🌹",section:"כתובים"},
+  {id:"rut",name:"רות",emoji:"🌾",section:"כתובים"},
+  {id:"eicha",name:"איכה",emoji:"💧",section:"כתובים"},
+  {id:"kohelet",name:"קהלת",emoji:"⏳",section:"כתובים"},
+  {id:"esther",name:"אסתר",emoji:"👸",section:"כתובים"},
+  {id:"daniel",name:"דניאל",emoji:"🦁",section:"כתובים"},
+  {id:"ezra",name:"עזרא",emoji:"📜",section:"כתובים"},
+  {id:"nechemya",name:"נחמיה",emoji:"🧱",section:"כתובים"},
+  {id:"divrei_a",name:"דברי הימים א",emoji:"📚",section:"כתובים"},
+  {id:"divrei_b",name:"דברי הימים ב",emoji:"📚",section:"כתובים"},
+];
+
+// ── TAB: OFFICIAL QUIZ ───────────────────────
+function TabOfficial({nav}) {
+  const [stats,setStats]=useState(null);
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.from("official_questions").select("year,stage,book").then(({data})=>{
+      if(!data)return;
+      const total=data.length;
+      const byStage={};
+      const byYear={};
+      const byBook={};
+      data.forEach(d=>{
+        byStage[d.stage]=(byStage[d.stage]||0)+1;
+        byYear[d.year]=(byYear[d.year]||0)+1;
+        if(d.book) byBook[d.book]=(byBook[d.book]||0)+1;
+      });
+      setStats({total,byStage,byYear,byBook,years:Object.keys(byYear).sort()});
+    });
+  },[]);
+
+  const STAGES=[
+    {id:"school",emoji:"🏫",name:"בית ספרי",desc:"השלב הראשון, היסודות",color:"#5DFC8A"},
+    {id:"district",emoji:"🌆",name:"מחוזי",desc:"שלב מתקדם",color:"#FFD700"},
+    {id:"national",emoji:"🇮🇱",name:"ארצי",desc:"גמר ארצי",color:"#FF8C00"},
+    {id:"world",emoji:"🌍",name:"עולמי",desc:"חידון העולמי לנוער",color:"#FF6B6B"},
+  ];
+
+  return <div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto",gap:14}}>
+    <div style={{textAlign:"center",padding:"4px 0"}}>
+      <div style={{fontSize:36}}>📜</div>
+      <h2 style={{fontSize:20,fontWeight:900,margin:"4px 0 2px",color:"#fff"}}>חידון התנ"ך הרשמי</h2>
+      <div style={{fontSize:12,color:T.muted}}>{stats?`${stats.total} שאלות אמיתיות מהשנים ${stats.years[0]}-${stats.years[stats.years.length-1]}`:"טוען..."}</div>
+    </div>
+
+    {/* Mock Exam CTA */}
+    <button onClick={()=>nav("mockexam")} style={{
+      background:`linear-gradient(135deg,#FF6B6B22,#FF8C0011)`,
+      border:`2px solid #FF6B6B66`,
+      borderRadius:T.r.lg,padding:"18px",cursor:"pointer",
+      display:"flex",alignItems:"center",gap:14,
+      boxShadow:`0 4px 16px #FF6B6B22`,
+    }}>
+      <div style={{fontSize:42}}>⏱️</div>
+      <div style={{textAlign:"right",flex:1}}>
+        <div style={{fontWeight:800,fontSize:18,color:"#FF6B6B"}}>מבחן סימולציה</div>
+        <div style={{fontSize:13,color:T.muted,marginTop:2}}>30 שאלות · 40 דקות · ציון אמיתי</div>
+      </div>
+      <div style={{fontSize:20,color:"#FF6B6B"}}>◀</div>
+    </button>
+
+    {/* Practice by stage */}
+    <div>
+      <div style={{fontSize:13,color:T.muted,fontWeight:700,marginBottom:8,textAlign:"right"}}>תרגול לפי שלב:</div>
+      {STAGES.map(s=>{
+        const count=stats?.byStage[s.id]||0;
+        return <button key={s.id} onClick={()=>count>0&&nav("realquiz",{stage:s.id})} disabled={count===0} style={{
+          width:"100%",
+          background:count===0?"rgba(255,255,255,0.03)":`${s.color}11`,
+          border:`1.5px solid ${count===0?"rgba(255,255,255,0.08)":s.color+"55"}`,
+          borderRadius:T.r.md,padding:"14px 16px",marginBottom:8,
+          cursor:count===0?"default":"pointer",opacity:count===0?0.4:1,
+          display:"flex",alignItems:"center",gap:14,color:"#fff",textAlign:"right",
+        }}>
+          <span style={{fontSize:30}}>{s.emoji}</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:16,color:s.color}}>{s.name}</div>
+            <div style={{fontSize:12,color:T.muted,marginTop:2}}>{s.desc}</div>
+          </div>
+          <div style={{textAlign:"left"}}>
+            <div style={{fontWeight:800,fontSize:18,color:count>0?s.color:T.muted}}>{count}</div>
+            <div style={{fontSize:10,color:T.muted}}>שאלות</div>
+          </div>
+        </button>;
+      })}
+    </div>
+
+    {/* Coverage map link */}
+    <button onClick={()=>nav("coverage")} style={{
+      background:"rgba(78,205,196,0.08)",
+      border:"1.5px solid rgba(78,205,196,0.3)",
+      borderRadius:T.r.md,padding:"14px 16px",cursor:"pointer",
+      display:"flex",alignItems:"center",gap:12,color:"#fff",
+    }}>
+      <span style={{fontSize:28}}>🗺️</span>
+      <div style={{flex:1,textAlign:"right"}}>
+        <div style={{fontWeight:700,fontSize:15,color:"#4ECDC4"}}>מפת ספרי התנ"ך</div>
+        <div style={{fontSize:11,color:T.muted,marginTop:2}}>איזה ספרים כיסית, מה נשאר</div>
+      </div>
+      <span style={{fontSize:18,color:"#4ECDC4"}}>◀</span>
+    </button>
+  </div>;
+}
+
+// ── REAL QUIZ — practice with official questions ──
+function RealQuiz({nav, params, online}) {
+  const stage=params?.stage||"school";
+  const [questions,setQuestions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [idx,setIdx]=useState(0);
+  const [sel,setSel]=useState(null);
+  const [answered,setAnswered]=useState(false);
+  const [correct,setCorrect]=useState(0);
+
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.from("official_questions").select("*").eq("stage",stage).limit(50).then(({data})=>{
+      if(!data){setLoading(false);return;}
+      // Shuffle
+      const shuffled=[...data].sort(()=>Math.random()-0.5).slice(0,15);
+      setQuestions(shuffled);
+      setLoading(false);
+    });
+  },[stage]);
+
+  const stageNames={school:"בית ספרי",district:"מחוזי",national:"ארצי",world:"עולמי"};
+  const stageColors={school:"#5DFC8A",district:"#FFD700",national:"#FF8C00",world:"#FF6B6B"};
+  const color=stageColors[stage];
+
+  if(loading)return<div style={{padding:60,textAlign:"center",color:T.muted}}><div style={{fontSize:48,animation:"pulse 1.2s infinite"}}>📜</div><div style={{marginTop:12}}>טוען שאלות אמיתיות...</div></div>;
+  if(!questions.length)return<div style={{padding:40,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📭</div><p style={{color:T.muted}}>אין שאלות בשלב זה</p><Btn onClick={()=>nav("home")}>חזרה</Btn></div>;
+
+  const q=questions[idx];
+  if(!q){
+    const pct=Math.round(correct/questions.length*100);
+    return<div style={{padding:30,textAlign:"center"}}>
+      <div style={{fontSize:80,animation:"float 2s ease-in-out infinite"}}>{pct>=80?"🏆":pct>=60?"⭐":"💪"}</div>
+      <h2 style={{color,fontSize:26,margin:"8px 0"}}>סיימת!</h2>
+      <div style={{fontSize:48,fontWeight:800,color:pct>=80?T.success:pct>=60?T.gold:T.danger}}>{correct}/{questions.length}</div>
+      <div style={{color:T.muted,marginBottom:20}}>{pct}% במבחן {stageNames[stage]}</div>
+      <Btn onClick={()=>{setIdx(0);setCorrect(0);setSel(null);setAnswered(false);}} style={{marginBottom:8}}>🔄 סיבוב נוסף</Btn>
+      <Btn v="ghost" onClick={()=>nav("home")}>🏠 בית</Btn>
+    </div>;
+  }
+
+  const answer=async(opt)=>{
+    if(answered)return;
+    Audio.tap();
+    const ok=opt===q.answer_text;
+    setSel(opt);setAnswered(true);
+    if(ok){setCorrect(c=>c+1);Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
+    // Log attempt
+    if(supabase) supabase.from("official_attempts").insert({
+      question_id:q.id,correct:ok,user_answer:opt
+    }).then(()=>{});
+  };
+  const next=()=>{setIdx(i=>i+1);setSel(null);setAnswered(false);};
+  const optState=(opt)=>!answered?"default":opt===q.answer_text?"correct":opt===sel?"wrong":"default";
+
+  return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <div style={{flex:1,display:"flex",gap:3}}>
+        {questions.map((_,i)=><div key={i} style={{flex:1,height:5,borderRadius:3,background:i<idx?color:i===idx?T.gold:"rgba(255,255,255,0.1)"}}/>)}
+      </div>
+      <span style={{fontSize:12,color:T.muted}}>{idx+1}/{questions.length}</span>
+    </div>
+    <div style={{textAlign:"center",marginBottom:10}}>
+      <div style={{fontSize:11,color,fontWeight:700,letterSpacing:1.2}}>📜 חידון {stageNames[stage]} · {q.year}</div>
+    </div>
+    <Card style={{padding:"22px 18px"}}>
+      <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.7,margin:0,textAlign:"right"}}>{q.question}</h2>
+      {q.source&&!answered&&<div style={{fontSize:11,color:T.muted,marginTop:8,textAlign:"left"}}>📖 {q.source}</div>}
+    </Card>
+    <div style={{marginTop:"auto"}}>
+      {(q.options||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
+      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.answer_text?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.answer_text?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.answer_text?"🌟":"💪"}</div>
+        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>התשובה הנכונה: <strong>{q.answer_text}</strong></div>
+        {q.source&&<div style={{fontSize:12,color:T.muted,marginTop:6,textAlign:"right"}}>📖 מקור: {q.source}</div>}
+        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.answer_text?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ── MOCK EXAM (30 questions, 40 minute timer) ──
+function MockExam({nav}) {
+  const [questions,setQuestions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [idx,setIdx]=useState(0);
+  const [answers,setAnswers]=useState({});
+  const [timeLeft,setTimeLeft]=useState(40*60);
+  const [done,setDone]=useState(false);
+
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.from("official_questions").select("*").limit(200).then(({data})=>{
+      if(!data){setLoading(false);return;}
+      const shuffled=[...data].sort(()=>Math.random()-0.5).slice(0,30);
+      setQuestions(shuffled);
+      setLoading(false);
+    });
+  },[]);
+
+  useEffect(()=>{
+    if(loading||done)return;
+    if(timeLeft<=0){setDone(true);return;}
+    const t=setTimeout(()=>setTimeLeft(s=>s-1),1000);
+    return()=>clearTimeout(t);
+  },[timeLeft,loading,done]);
+
+  if(loading)return<div style={{padding:60,textAlign:"center"}}><div style={{fontSize:48}}>⏱️</div><div style={{marginTop:12,color:T.muted}}>מכין מבחן...</div></div>;
+
+  if(done){
+    const correct=questions.filter(q=>answers[q.id]===q.answer_text).length;
+    const pct=Math.round(correct/questions.length*100);
+    return<div style={{padding:24,textAlign:"center",overflowY:"auto",height:"100%"}}>
+      <div style={{fontSize:80}}>{pct>=80?"🏆":pct>=60?"⭐":"💪"}</div>
+      <h2 style={{fontSize:24,color:T.gold,margin:"8px 0"}}>סיימת את המבחן!</h2>
+      <div style={{fontSize:54,fontWeight:900,color:pct>=80?T.success:pct>=60?T.gold:T.danger,margin:"8px 0"}}>{pct}%</div>
+      <div style={{fontSize:18,color:"#fff",marginBottom:16}}>{correct}/{questions.length} תשובות נכונות</div>
+      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:T.r.md,padding:16,marginBottom:16,textAlign:"right"}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:T.gold}}>📊 הערכה:</div>
+        <div style={{fontSize:13,lineHeight:1.7,color:"rgba(255,255,255,0.85)"}}>
+          {pct>=85?"מצוין! ברמה של חידון ארצי 🌟":pct>=70?"טוב! יכולה לעבור שלב בית ספרי 👍":pct>=50?"בדרך הנכונה. דרושה עוד עבודה 💪":"צריך הרבה עוד תרגול. אל תתייאשי 📚"}
+        </div>
+      </div>
+      <Btn onClick={()=>nav("home")}>🏠 חזרה</Btn>
+    </div>;
+  }
+
+  const q=questions[idx];
+  if(!q)return null;
+
+  const min=Math.floor(timeLeft/60);
+  const sec=timeLeft%60;
+  const timeColor=timeLeft<300?T.danger:timeLeft<600?T.gold:T.success;
+
+  const answer=(opt)=>{
+    setAnswers(a=>({...a,[q.id]:opt}));
+  };
+
+  const finish=()=>{
+    if(window.confirm("לסיים את המבחן? לא תוכלי לחזור."))setDone(true);
+  };
+
+  return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+    {/* Top bar with timer + progress */}
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+      <div style={{flex:1,fontSize:12,color:T.muted}}>שאלה {idx+1}/{questions.length} · {Object.keys(answers).length} ענת</div>
+      <div style={{fontSize:16,fontWeight:800,color:timeColor,fontVariantNumeric:"tabular-nums"}}>⏱ {String(min).padStart(2,"0")}:{String(sec).padStart(2,"0")}</div>
+    </div>
+
+    <Card style={{padding:"18px 16px"}}>
+      <div style={{fontSize:11,color:T.gold,fontWeight:700,marginBottom:6,textAlign:"center"}}>📜 שאלה {idx+1} · חידון {q.year}</div>
+      <h2 style={{fontSize:17,fontWeight:700,lineHeight:1.7,margin:0,textAlign:"right"}}>{q.question}</h2>
+    </Card>
+
+    <div style={{flex:1,overflow:"auto",marginTop:10}}>
+      {(q.options||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={answers[q.id]===opt?"correct":"default"} onClick={()=>answer(opt)}/>)}
+    </div>
+
+    {/* Bottom nav */}
+    <div style={{display:"flex",gap:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
+      <button onClick={()=>setIdx(Math.max(0,idx-1))} disabled={idx===0} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.06)",border:`1px solid ${T.border}`,borderRadius:T.r.md,color:idx===0?T.muted:"#fff",cursor:idx===0?"default":"pointer",fontWeight:700,opacity:idx===0?0.3:1}}>→ קודם</button>
+      {idx<questions.length-1
+        ?<button onClick={()=>setIdx(i=>i+1)} style={{flex:2,padding:"12px",background:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,color:"#1a0533",cursor:"pointer",fontWeight:800}}>← הבאה</button>
+        :<button onClick={finish} style={{flex:2,padding:"12px",background:`linear-gradient(135deg,${T.success},#3EA76A)`,border:"none",borderRadius:T.r.md,color:"#1a0533",cursor:"pointer",fontWeight:800}}>✅ סיום מבחן</button>
+      }
+    </div>
+  </div>;
+}
+
+// ── COVERAGE MAP — all 39 books visual ──
+function CoverageMap({nav}) {
+  const {state}=useS();
+  const [stats,setStats]=useState({});
+
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.from("official_questions").select("book").then(({data})=>{
+      if(!data)return;
+      const counts={};
+      data.forEach(d=>{if(d.book) counts[d.book]=(counts[d.book]||0)+1;});
+      setStats(counts);
+    });
+  },[]);
+
+  const sections=["תורה","נביאים ראשונים","נביאים אחרונים","תרי עשר","כתובים"];
+  const bySection={};
+  ALL_TANAKH_BOOKS.forEach(b=>{
+    if(!bySection[b.section])bySection[b.section]=[];
+    bySection[b.section].push(b);
+  });
+
+  const totalCovered=Object.keys(stats).filter(k=>stats[k]>0).length;
+
+  return<div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto"}}>
+    <div style={{textAlign:"center",padding:"4px 0 12px"}}>
+      <div style={{fontSize:36}}>🗺️</div>
+      <h2 style={{fontSize:20,fontWeight:900,margin:"4px 0 2px"}}>מפת ספרי התנ"ך</h2>
+      <div style={{fontSize:12,color:T.muted}}>{totalCovered}/{ALL_TANAKH_BOOKS.length} ספרים בחומר החידון</div>
+    </div>
+
+    {sections.map(section=><div key={section} style={{marginBottom:16}}>
+      <div style={{fontSize:13,fontWeight:800,color:T.gold,marginBottom:8,textAlign:"right",letterSpacing:1}}>{section}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {(bySection[section]||[]).map(book=>{
+          const count=stats[book.id]||0;
+          const userStats=state.topics?.[book.id];
+          const userTried=userStats&&userStats.total>0;
+          const has=count>0;
+          return<button key={book.id} onClick={()=>has&&nav("realquiz",{book:book.id})} disabled={!has} style={{
+            padding:"10px 6px",
+            background:has?(userTried?"rgba(93,252,138,0.1)":"rgba(255,215,0,0.08)"):"rgba(255,255,255,0.03)",
+            border:`1.5px solid ${has?(userTried?"rgba(93,252,138,0.4)":"rgba(255,215,0,0.3)"):"rgba(255,255,255,0.1)"}`,
+            borderRadius:T.r.sm,cursor:has?"pointer":"default",
+            color:"#fff",textAlign:"center",opacity:has?1:0.4,minHeight:64
+          }}>
+            <div style={{fontSize:20}}>{book.emoji}</div>
+            <div style={{fontSize:10,fontWeight:700,marginTop:3,lineHeight:1.2}}>{book.name}</div>
+            {has&&<div style={{fontSize:9,color:userTried?T.success:T.gold,marginTop:2}}>{count}q</div>}
+          </button>;
+        })}
+      </div>
+    </div>)}
+
+    <div style={{padding:"12px 16px",background:"rgba(255,255,255,0.04)",borderRadius:T.r.md,fontSize:12,color:T.muted,textAlign:"right",marginTop:8}}>
+      💡 ספרים בצהוב: יש שאלות אמיתיות מהחידון. ירוק: כבר תרגלת.
+    </div>
+  </div>;
+}
+
 const TABS=[
   {id:"home",emoji:"🏠",label:"בית"},
   {id:"path",emoji:"🗺️",label:"המסע"},
-  {id:"learn",emoji:"📚",label:"ספרים"},
+  {id:"official",emoji:"📜",label:"חידון"},
   {id:"games",emoji:"🎮",label:"משחקים"},
   {id:"profile",emoji:"👤",label:"שלי"},
 ];
-const TAB_SCREENS={home:TabHome,path:CurriculumPath,learn:TabLearn,games:TabGames,profile:TabProfile};
+const TAB_SCREENS={home:TabHome,path:CurriculumPath,official:TabOfficial,games:TabGames,profile:TabProfile};
 
 function Router({onLauncher}) {
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";

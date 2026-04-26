@@ -1,0 +1,24 @@
+{
+  "year": 2020,
+  "stage": "school",
+  "sector": "state-religious",
+  "questions_file": "2020_school_state-religious_session-a.txt",
+  "answers_file": "2020_school_state-religious_session-a-answers.txt",
+  "questions_count": 1,
+  "questions": [
+    {
+      "n": 30,
+      "q": "שקלים ב 50 .שקלים ג 70 .שקלים ד 100 .שקלים .34מה מהדברים הבאים לא שלח יעקב כמנחה לעשו?",
+      "options": [
+        "גמלים",
+        "פרים",
+        "סוסים",
+        "אילים .35אילו מן האוכלים הבאים אינו מוזכר בתלונתם של בני ישראל בתבערה? א .שּומִ ים בִ .קשֻ אִ ים ג .תְ אֵּ נִ ים ד .אֲ בַ טִ חִ ים בהצלחה!"
+      ],
+      "answer_letter": null,
+      "answer_text": null,
+      "source": "",
+      "book": null
+    }
+  ]
+}
