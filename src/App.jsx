@@ -21,6 +21,7 @@ import { createClient } from "@supabase/supabase-js";
 import { CURRICULUM, SHABBAT_DISCUSSIONS, getDay, weekOf } from "./curriculum";
 import { ALL_TANAKH_BOOKS, BOOK_BY_ID } from "./tanakhBooks";
 import { LEVELS, FOCUS_ORDER, buildMatrix, pickNextTask, overallProgress, estimateReadiness, recordAttempt } from "./mastery";
+import { log, logError, getLogs, clearLogs, logsAsText } from "./logger";
 
 // ─────────────────────────────────────────────
 // SUPABASE CLIENT
@@ -666,16 +667,22 @@ const Ctx = createContext(null);
 const useS = ()=>useContext(Ctx);
 
 function Store({children}) {
-  const [state,dispatch] = useReducer(reducer,null,load);
-  useEffect(()=>save(state),[state]);
-  useEffect(()=>dispatch({type:"STREAK"}),[]);
+  log("Store","mount");
+  const [state,dispatch] = useReducer(reducer,null,()=>{try{return load();}catch(e){logError("Store",e,"load");return INIT;}});
+  const wrappedDispatch=useCallback((action)=>{
+    try{log("dispatch",action.type,Object.keys(action).filter(k=>k!=="type").reduce((o,k)=>{o[k]=typeof action[k]==="object"?"[obj]":action[k];return o;},{}));dispatch(action);}
+    catch(e){logError("dispatch",e,action.type);}
+  },[]);
+  useEffect(()=>{try{save(state);}catch(e){logError("Store",e,"save");}},[state]);
+  useEffect(()=>{wrappedDispatch({type:"STREAK"});},[wrappedDispatch]);
 
   // Load extra questions from Supabase and merge into DB
   useEffect(()=>{
-    if(!supabase) return;
+    if(!supabase) {log("Store","no-supabase");return;}
+    log("Store","fetching-questions");
     supabase.from("questions").select("*").then(({data,error})=>{
-      if(error){console.warn("[Supabase] Failed to load questions:",error.message);return;}
-      if(!data||!data.length) return;
+      if(error){log("Store","questions-error",error.message);return;}
+      if(!data||!data.length) {log("Store","questions-empty");return;}
       let added=0;
       data.forEach(row=>{
         if(!row.topic||!row.id) return;
@@ -688,11 +695,11 @@ function Store({children}) {
         DB[row.topic].push(q);
         added++;
       });
-      console.log(`[Supabase] Loaded ${added}/${data.length} extra questions`);
-    }).catch(e=>console.warn("[Supabase] questions error:",e?.message));
+      log("Store","questions-loaded",{added,total:data.length});
+    }).catch(e=>{logError("Store",e,"questions-fetch");});
   },[]);
 
-  return <Ctx.Provider value={{state,dispatch}}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{state,dispatch:wrappedDispatch}}>{children}</Ctx.Provider>;
 }
 
 // ─────────────────────────────────────────────
@@ -2995,22 +3002,30 @@ function DailyLesson({nav, params, online}) {
 
 // ── CURRICULUM PATH (Duolingo-style) ────────
 function TabHome({nav}) {
-  const {state,dispatch}=useS();
-  const dailyDone = Engine.isDailyDone(state.lastDaily);
+  log("TabHome","render");
+  const ctx=useS();
+  const state=ctx?.state||INIT;
+  const dispatch=ctx?.dispatch||(()=>{});
+  const dailyDone = Engine.isDailyDone(state?.lastDaily);
   const [nextTask,setNextTask]=useState(null);
   const [readiness,setReadiness]=useState(null);
 
   useEffect(()=>{
-    if(!supabase)return;
+    if(!ctx) log("TabHome","no-context");
+    if(!supabase){log("TabHome","no-supabase");return;}
+    log("TabHome","fetch-mastery");
     supabase.from("mastery").select("*").then(({data,error})=>{
-      if(error){console.warn("[TabHome] mastery error:",error.message);return;}
+      if(error){log("TabHome","mastery-error",error.message);return;}
       try{
         const m=buildMatrix(data||[]);
-        setNextTask(pickNextTask(m));
-        setReadiness(estimateReadiness(m));
-      }catch(e){console.warn("[TabHome] matrix error:",e?.message);}
-    }).catch(e=>console.warn("[TabHome] fetch error:",e?.message));
-  },[]);
+        const nt=pickNextTask(m);
+        const r=estimateReadiness(m);
+        log("TabHome","mastery-loaded",{records:data?.length||0,nextTask:nt});
+        setNextTask(nt);
+        setReadiness(r);
+      }catch(e){logError("TabHome",e,"matrix");}
+    }).catch(e=>logError("TabHome",e,"fetch"));
+  },[ctx]);
 
   const currentDay = state.currentDay || 1;
   const todaysLesson = getDay(currentDay);
@@ -3997,25 +4012,33 @@ const TABS=[
 const TAB_SCREENS={home:TabHome,mastery:MasteryDashboard,official:TabOfficial,games:TabGames,profile:TabProfile};
 
 function Router({onLauncher}) {
+  log("Router","mount");
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
-  const [splash,setSplash]=useState(()=>!initScreen&&!sessionStorage.getItem("v4"));
+  const [splash,setSplash]=useState(()=>{
+    const hasSession=!!sessionStorage.getItem("v4");
+    const showSplash=!initScreen&&!hasSession;
+    log("Router","init",{initScreen,hasSession,showSplash});
+    return showSplash;
+  });
   const [tab,setTab]=useState("home");
   const [subScreen,setSubScreen]=useState(initScreen?{screen:initScreen,params:{}}:null);
   const online=useOnline();
 
   const nav=useCallback((screen,params={})=>{
+    log("Router","nav",{to:screen,params:Object.keys(params)});
     if(screen==="home"){setSubScreen(null);setTab("home");return;}
     if(screen==="__launcher__"&&onLauncher){onLauncher();return;}
     setSubScreen({screen,params});
     window.scrollTo({top:0});
   },[onLauncher]);
 
-  const goBack=useCallback(()=>{setSubScreen(null);},[]);
+  const goBack=useCallback(()=>{log("Router","goBack");setSubScreen(null);},[]);
 
-  if(splash)return<Splash onDone={()=>{sessionStorage.setItem("v4","1");setSplash(false);}}/>;
+  if(splash)return<Splash onDone={()=>{log("Router","splash-done");sessionStorage.setItem("v4","1");setSplash(false);}}/>;
 
   const isSubScreen=!!subScreen;
   const SubComp=isSubScreen?(SCREENS[subScreen.screen]||null):null;
+  log("Router","render",{tab,isSubScreen,subScreen:subScreen?.screen,subCompFound:!!SubComp,tabCompFound:!!TAB_SCREENS[tab]});
 
   return <div style={{height:"100vh",minHeight:"100dvh",maxHeight:"-webkit-fill-available",display:"flex",flexDirection:"column",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",position:"relative",overflow:"hidden"}}>
     <OfflineBanner online={online}/>
@@ -4111,20 +4134,77 @@ function Launcher({onSelect}) {
 
 // Error boundary so we never get a blank screen
 class ErrorBoundary extends React.Component {
-  constructor(props){super(props);this.state={err:null};}
+  constructor(props){super(props);this.state={err:null,errInfo:null,showLogs:false};}
   static getDerivedStateFromError(err){return{err};}
-  componentDidCatch(err,info){console.error("[ErrorBoundary]",err,info);}
+  componentDidCatch(err,info){
+    try{logError("ErrorBoundary",err,{componentStack:info?.componentStack?.split("\n").slice(0,4).join(" | ")});}catch{}
+    this.setState({errInfo:info});
+    console.error("[ErrorBoundary]",err,info);
+  }
+  copyDebug(){
+    const lines=[];
+    lines.push("=== ERROR ===");
+    lines.push(String(this.state.err?.message||this.state.err));
+    lines.push("");
+    lines.push("=== STACK ===");
+    lines.push(String(this.state.err?.stack||"no stack"));
+    lines.push("");
+    lines.push("=== COMPONENT STACK ===");
+    lines.push(String(this.state.errInfo?.componentStack||"no info"));
+    lines.push("");
+    lines.push("=== LAST 50 LOGS ===");
+    try{
+      const logs=getLogs().slice(-50);
+      logs.forEach(l=>lines.push(`[${l.t}] [${l.c}] ${l.e}${l.d?" — "+l.d:""}`));
+    }catch{lines.push("(no logs)");}
+    const text=lines.join("\n");
+    try{
+      navigator.clipboard.writeText(text);
+      alert("✅ הועתק! שלחי לאבא ב-WhatsApp");
+    }catch{
+      // Fallback: show in a textarea
+      const ta=document.createElement("textarea");
+      ta.value=text;ta.style.position="fixed";ta.style.top="50%";ta.style.left="50%";ta.style.transform="translate(-50%,-50%)";ta.style.width="80%";ta.style.height="60%";ta.style.zIndex="99999";document.body.appendChild(ta);ta.select();
+      setTimeout(()=>{document.body.removeChild(ta);},10000);
+    }
+  }
   render(){
     if(this.state.err){
-      return<div style={{minHeight:"100vh",background:"#0a0818",color:"#fff",direction:"rtl",padding:24,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",fontFamily:"system-ui"}}>
-        <div style={{fontSize:48,marginBottom:16}}>😔</div>
-        <h2 style={{color:"#FFD700",margin:"0 0 8px"}}>אופס! משהו השתבש</h2>
-        <p style={{color:"rgba(255,255,255,0.7)",fontSize:14,maxWidth:400,lineHeight:1.6}}>נסי לרענן את הדף. אם זה ממשיך, ספרי לאבא.</p>
-        <details style={{marginTop:16,maxWidth:500,fontSize:11,color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.05)",padding:12,borderRadius:8}}>
-          <summary>פרטים טכניים</summary>
-          <pre style={{textAlign:"left",overflow:"auto",margin:"8px 0 0"}}>{String(this.state.err?.message||this.state.err)}</pre>
+      const errMsg=String(this.state.err?.message||this.state.err);
+      const errStack=String(this.state.err?.stack||"").split("\n").slice(0,5).join("\n");
+      const compStack=String(this.state.errInfo?.componentStack||"").split("\n").slice(0,5).join("\n");
+      const logs=(()=>{try{return getLogs().slice(-25);}catch{return [];}})();
+      return<div style={{minHeight:"100vh",background:"#0a0818",color:"#fff",direction:"rtl",padding:20,fontFamily:"system-ui",overflowY:"auto"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:48,marginBottom:8}}>😔</div>
+          <h2 style={{color:"#FFD700",margin:"0 0 8px",fontSize:22}}>אופס! משהו השתבש</h2>
+          <p style={{color:"rgba(255,255,255,0.7)",fontSize:13,margin:0}}>נסי רענון. אם זה ממשיך — שלחי לאבא את הפרטים למטה.</p>
+        </div>
+
+        <div style={{background:"rgba(255,107,107,0.12)",border:"1px solid rgba(255,107,107,0.4)",borderRadius:12,padding:14,marginBottom:14,direction:"ltr",textAlign:"left"}}>
+          <div style={{fontSize:11,color:"#FF6B6B",fontWeight:700,marginBottom:6,direction:"rtl",textAlign:"right"}}>🔴 שגיאה</div>
+          <div style={{fontSize:13,color:"#fff",fontFamily:"monospace",wordBreak:"break-word"}}>{errMsg}</div>
+        </div>
+
+        <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14,marginBottom:14,direction:"ltr",textAlign:"left"}}>
+          <div style={{fontSize:11,color:"#FFD700",fontWeight:700,marginBottom:6,direction:"rtl",textAlign:"right"}}>📍 מיקום בקוד</div>
+          <pre style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.7)",overflow:"auto",fontFamily:"monospace",maxHeight:120}}>{errStack||"(no stack)"}</pre>
+        </div>
+
+        {compStack&&<div style={{background:"rgba(78,205,196,0.06)",border:"1px solid rgba(78,205,196,0.2)",borderRadius:12,padding:14,marginBottom:14,direction:"ltr",textAlign:"left"}}>
+          <div style={{fontSize:11,color:"#4ECDC4",fontWeight:700,marginBottom:6,direction:"rtl",textAlign:"right"}}>🌳 רכיבים</div>
+          <pre style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.7)",overflow:"auto",fontFamily:"monospace",maxHeight:120}}>{compStack}</pre>
+        </div>}
+
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <button onClick={()=>this.copyDebug()} style={{flex:1,padding:"12px",background:"linear-gradient(135deg,#FFD700,#FF8C00)",border:"none",borderRadius:24,color:"#1a0533",fontWeight:800,fontSize:14,cursor:"pointer"}}>📋 העתק הכל לאבא</button>
+          <button onClick={()=>{this.setState({err:null});window.location.reload();}} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:24,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>🔄 רענון</button>
+        </div>
+
+        <details open style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:12,direction:"ltr",textAlign:"left"}}>
+          <summary style={{fontSize:11,cursor:"pointer",color:"rgba(255,255,255,0.7)",fontWeight:700,direction:"rtl",textAlign:"right"}}>📝 לוגים אחרונים ({logs.length})</summary>
+          <pre style={{margin:"8px 0 0",fontSize:9,color:"rgba(255,255,255,0.6)",overflow:"auto",fontFamily:"monospace",maxHeight:240,lineHeight:1.5}}>{logs.map(l=>`[${l.t}] [${l.c}] ${l.e}${l.d?" — "+l.d:""}`).join("\n")||"(אין לוגים)"}</pre>
         </details>
-        <button onClick={()=>{this.setState({err:null});window.location.reload();}} style={{marginTop:24,padding:"12px 24px",background:"#FFD700",border:"none",borderRadius:24,color:"#1a0533",fontWeight:700,fontSize:15,cursor:"pointer"}}>🔄 רענון</button>
       </div>;
     }
     return this.props.children;
@@ -4133,11 +4213,12 @@ class ErrorBoundary extends React.Component {
 
 export default function App(){
   const [app,setApp]=useState(null);
-  const selectApp=(id)=>{setApp(id);};
-  const goLauncher=()=>{setApp(null);};
+  const selectApp=(id)=>{log("App","selectApp",id);setApp(id);};
+  const goLauncher=()=>{log("App","goLauncher");setApp(null);};
 
   // Direct URL params skip launcher
   const urlScreen=new URLSearchParams(window.location.search).get("screen");
+  log("App","render",{app,urlScreen});
   if(urlScreen) return<ErrorBoundary><Store><Router/></Store></ErrorBoundary>;
 
   if(!app) return<ErrorBoundary><Launcher onSelect={selectApp}/></ErrorBoundary>;
