@@ -1,0 +1,21 @@
+{
+  "year": 2020,
+  "stage": "national",
+  "sector": "state-religious",
+  "questions_count": 1,
+  "questions": [
+    {
+      "q": "על מי מסופר ששר יחד עם אדם אחר?",
+      "options": [
+        "מרים",
+        "דבורה",
+        "משה",
+        "דוד"
+      ],
+      "answer_letter": "ב",
+      "source": "",
+      "n": 28,
+      "answer_text": "דבורה"
+    }
+  ]
+}

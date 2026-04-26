@@ -3002,11 +3002,14 @@ function TabHome({nav}) {
 
   useEffect(()=>{
     if(!supabase)return;
-    supabase.from("mastery").select("*").then(({data})=>{
-      const m=buildMatrix(data||[]);
-      setNextTask(pickNextTask(m));
-      setReadiness(estimateReadiness(m));
-    });
+    supabase.from("mastery").select("*").then(({data,error})=>{
+      if(error){console.warn("[TabHome] mastery error:",error.message);return;}
+      try{
+        const m=buildMatrix(data||[]);
+        setNextTask(pickNextTask(m));
+        setReadiness(estimateReadiness(m));
+      }catch(e){console.warn("[TabHome] matrix error:",e?.message);}
+    }).catch(e=>console.warn("[TabHome] fetch error:",e?.message));
   },[]);
 
   const currentDay = state.currentDay || 1;
@@ -3021,7 +3024,7 @@ function TabHome({nav}) {
     </div>
 
     {/* HERO: Next Mastery Task */}
-    {nextTask?(()=>{
+    {nextTask&&BOOK_BY_ID[nextTask.bookId]&&LEVELS[nextTask.level]?(()=>{
       const book=BOOK_BY_ID[nextTask.bookId];
       const lvl=LEVELS[nextTask.level];
       const reasonText={continue:"המשיכי איפה שעצרת",new:"רמה חדשה — בואי נתחיל",review:"חזרה קצרה לחיזוק"}[nextTask.reason];
@@ -3629,9 +3632,9 @@ function pickEncouragement(pct){
 // ── LEVEL QUIZ — adaptive exercise at specific (book, level) ──
 function LevelQuiz({nav, params}) {
   const bookId=params?.book;
-  const level=params?.level||0;
+  const level=Math.max(0,Math.min(5,params?.level||0));
   const book=BOOK_BY_ID[bookId];
-  const lvl=LEVELS[level];
+  const lvl=LEVELS[level]||LEVELS[0];
   const [questions,setQuestions]=useState([]);
   const [loading,setLoading]=useState(true);
   const [idx,setIdx]=useState(0);
@@ -3645,35 +3648,44 @@ function LevelQuiz({nav, params}) {
   const TARGET_QUESTIONS=8;
 
   useEffect(()=>{
+    let cancelled=false;
     const load=async()=>{
-      let pool=[];
-      if(level===5){
-        // Real official questions
-        if(supabase){
-          const{data}=await supabase.from("official_questions").select("*").eq("book",bookId).limit(20);
-          pool=(data||[]).map(q=>({
-            id:q.id,
-            q:q.question,
-            options:q.options||[],
-            a:q.answer_text,
-            exp:q.source?`📖 מקור: ${q.source}`:"",
-            isOfficial:true,
-          }));
+      try{
+        let pool=[];
+        if(level===5){
+          if(supabase&&bookId){
+            const{data,error}=await supabase.from("official_questions").select("*").eq("book",bookId).not("answer_text","is",null).limit(20);
+            if(error){console.warn("[LevelQuiz] official error:",error.message);}
+            pool=(data||[]).map(q=>({
+              id:q.id,
+              q:q.question,
+              options:Array.isArray(q.options)?q.options:[],
+              a:q.answer_text,
+              exp:q.source?`📖 מקור: ${q.source}`:"",
+              isOfficial:true,
+            })).filter(q=>q.q&&q.options.length>=2&&q.a);
+          }
+        } else {
+          const dbQs=DB[bookId]||[];
+          pool=Engine.shuffle([...dbQs]).slice(0,TARGET_QUESTIONS*2).map(q=>{
+            try{
+              const shuffled=Engine.shuffleOptions(q);
+              return{id:q.id,q:shuffled.q,options:shuffled.o||[],a:shuffled.a,exp:q.exp||"",hint:q.hint};
+            }catch{return null;}
+          }).filter(Boolean);
         }
-      } else {
-        // Use existing DB or generate via AI
-        const dbQs=DB[bookId]||[];
-        pool=Engine.shuffle([...dbQs]).slice(0,TARGET_QUESTIONS).map(q=>{
-          const shuffled=Engine.shuffleOptions(q);
-          return{id:q.id,q:shuffled.q,options:shuffled.o||[],a:shuffled.a,exp:q.exp||"",hint:q.hint};
-        });
+        const shuffled=pool.sort(()=>Math.random()-0.5).slice(0,TARGET_QUESTIONS);
+        if(!cancelled){
+          setQuestions(shuffled);
+          setLoading(false);
+        }
+      }catch(e){
+        console.error("[LevelQuiz] load error:",e?.message);
+        if(!cancelled){setLoading(false);}
       }
-      // Shuffle and limit
-      const shuffled=pool.sort(()=>Math.random()-0.5).slice(0,TARGET_QUESTIONS);
-      setQuestions(shuffled);
-      setLoading(false);
     };
     load();
+    return()=>{cancelled=true;};
   },[bookId,level]);
 
   if(!book)return<div style={{padding:40}}>ספר לא נמצא</div>;
@@ -4099,6 +4111,28 @@ function Launcher({onSelect}) {
   </div>;
 }
 
+// Error boundary so we never get a blank screen
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={err:null};}
+  static getDerivedStateFromError(err){return{err};}
+  componentDidCatch(err,info){console.error("[ErrorBoundary]",err,info);}
+  render(){
+    if(this.state.err){
+      return<div style={{minHeight:"100vh",background:"#0a0818",color:"#fff",direction:"rtl",padding:24,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",fontFamily:"system-ui"}}>
+        <div style={{fontSize:48,marginBottom:16}}>😔</div>
+        <h2 style={{color:"#FFD700",margin:"0 0 8px"}}>אופס! משהו השתבש</h2>
+        <p style={{color:"rgba(255,255,255,0.7)",fontSize:14,maxWidth:400,lineHeight:1.6}}>נסי לרענן את הדף. אם זה ממשיך, ספרי לאבא.</p>
+        <details style={{marginTop:16,maxWidth:500,fontSize:11,color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.05)",padding:12,borderRadius:8}}>
+          <summary>פרטים טכניים</summary>
+          <pre style={{textAlign:"left",overflow:"auto",margin:"8px 0 0"}}>{String(this.state.err?.message||this.state.err)}</pre>
+        </details>
+        <button onClick={()=>{this.setState({err:null});window.location.reload();}} style={{marginTop:24,padding:"12px 24px",background:"#FFD700",border:"none",borderRadius:24,color:"#1a0533",fontWeight:700,fontSize:15,cursor:"pointer"}}>🔄 רענון</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
 export default function App(){
   const [app,setApp]=useState(null);
   const selectApp=(id)=>{setApp(id);};
@@ -4106,9 +4140,9 @@ export default function App(){
 
   // Direct URL params skip launcher
   const urlScreen=new URLSearchParams(window.location.search).get("screen");
-  if(urlScreen) return<Store><Router/></Store>;
+  if(urlScreen) return<ErrorBoundary><Store><Router/></Store></ErrorBoundary>;
 
-  if(!app) return<Launcher onSelect={selectApp}/>;
-  if(app==="bible") return<Store><Router onLauncher={goLauncher}/></Store>;
-  return<Launcher onSelect={selectApp}/>;
+  if(!app) return<ErrorBoundary><Launcher onSelect={selectApp}/></ErrorBoundary>;
+  if(app==="bible") return<ErrorBoundary><Store><Router onLauncher={goLauncher}/></Store></ErrorBoundary>;
+  return<ErrorBoundary><Launcher onSelect={selectApp}/></ErrorBoundary>;
 }

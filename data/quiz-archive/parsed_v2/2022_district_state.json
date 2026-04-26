@@ -1,0 +1,20 @@
+{
+  "year": 2022,
+  "stage": "district",
+  "sector": "state",
+  "questions_count": 1,
+  "questions": [
+    {
+      "q": "מי לבש את בגדי אחיו הגדול?",
+      "options": [
+        "יוסף",
+        "משה",
+        "יעקב",
+        "הבל"
+      ],
+      "answer_letter": null,
+      "source": "",
+      "n": 8
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "year": 2024,
+  "stage": "world",
+  "sector": "state-religious",
+  "questions_count": 1,
+  "questions": [
+    {
+      "q": "השאלה",
+      "options": [
+        "א",
+        "ב",
+        "ג",
+        "ד"
+      ],
+      "answer_letter": null,
+      "n": 7
+    }
+  ]
+}

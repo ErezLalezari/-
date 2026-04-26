@@ -1,0 +1,371 @@
+To process: 75 groups
+
+[1/75] 2015/district/state (2015_district_state_questions.txt)
+  Found 23 candidate blocks
+  ✓ Saved 2 questions
+
+[2/75] 2015/district/state-religious (2015_district_state-religious_questions.txt)
+  Found 23 candidate blocks
+  ✓ Saved 7 questions
+
+[3/75] 2015/national/state (2015_national_state_written.txt)
+  Found 20 candidate blocks
+  ✓ Saved 5 questions
+
+[4/75] 2015/national/state-religious (2015_national_state-religious_written.txt)
+  Found 20 candidate blocks
+  ✓ Saved 4 questions
+
+[5/75] 2015/school/state (2015_school_state_questions.txt)
+  Found 19 candidate blocks
+  ✓ Saved 7 questions
+
+[6/75] 2015/school/state-religious (2015_school_state-religious_questions.txt)
+  Found 18 candidate blocks
+  ✓ Saved 6 questions
+
+[7/75] 2016/district/state (2016_district_state_questions.txt)
+  Found 18 candidate blocks
+  ✓ Saved 1 questions
+
+[8/75] 2016/district/state-religious (2016_district_state-religious_questions.txt)
+  Found 19 candidate blocks
+  ✓ Saved 2 questions
+
+[9/75] 2016/national/state (2016_national_state_written.txt)
+  Found 24 candidate blocks
+  ✓ Saved 2 questions
+
+[10/75] 2016/national/state-religious (2016_national_state-religious_written.txt)
+  Found 10 candidate blocks
+  ✓ Saved 3 questions
+
+[11/75] 2016/school/state (2016_school_state_questions.txt)
+  Found 24 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 14 questions
+
+[12/75] 2016/school/state-religious (2016_school_state-religious_questions.txt)
+  Found 23 candidate blocks
+  ✓ Saved 7 questions
+
+[13/75] 2017/district/state (2017_district_state_questions.txt)
+  Found 20 candidate blocks
+  ✓ Saved 3 questions
+
+[14/75] 2017/district/state-religious (2017_district_state-religious_questions.txt)
+  Found 17 candidate blocks
+  ✓ Saved 6 questions
+
+[15/75] 2017/national/state (2017_national_state_written.txt)
+  Found 26 candidate blocks
+  ✓ Saved 5 questions
+
+[16/75] 2017/national/state-religious (2017_national_state-religious_written.txt)
+  Found 20 candidate blocks
+  ✓ Saved 3 questions
+
+[17/75] 2017/school/state (2017_school_state_questions.txt)
+  Found 23 candidate blocks
+  ✓ Saved 9 questions
+
+[18/75] 2017/school/state-religious (2017_school_state-religious_questions.txt)
+  Found 22 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 12 questions
+
+[19/75] 2018/district/state (2018_district_state_written.txt)
+  Found 43 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 16 questions
+
+[20/75] 2018/district/state-religious (2018_district_state-religious_written.txt)
+  Found 41 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 13 questions
+
+[21/75] 2018/national/state (2018_national_state_written.txt)
+  Found 26 candidate blocks
+  ✓ Saved 9 questions
+
+[22/75] 2018/national/state-religious (2018_national_state-religious_written.txt)
+  Found 26 candidate blocks
+  ✓ Saved 8 questions
+
+[23/75] 2018/school/state (2018_school_state_session-a.txt)
+  Found 23 candidate blocks
+  Found 26 answers in answer key
+  ✓ Saved 4 questions
+
+[24/75] 2018/school/state-religious (2018_school_state-religious_session-a.txt)
+  Found 25 candidate blocks
+  Found 25 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 14 questions
+
+[25/75] 2019/district/state (2019_district_state_written.txt)
+  Found 48 candidate blocks
+  Progress: 10 questions extracted
+  Progress: 20 questions extracted
+  ✓ Saved 23 questions
+
+[26/75] 2019/district/state-religious (2019_district_state-religious_written.txt)
+  Found 41 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 18 questions
+
+[27/75] 2019/national/state (2019_national_state_prelim.txt)
+  Found 52 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 11 questions
+
+[28/75] 2019/national/state-religious (2019_national_state-religious_prelim.txt)
+  Found 40 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 16 questions
+
+[29/75] 2020/district/state (2020_district_state_written.txt)
+  Found 58 candidate blocks
+  Found 45 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 13 questions
+
+[30/75] 2020/district/state-religious (2020_district_state-religious_written.txt)
+  Found 57 candidate blocks
+  Found 41 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 19 questions
+
+[31/75] 2020/national/state (2020_national_state_written.txt)
+  Found 17 candidate blocks
+  Found 40 answers in answer key
+  ✓ Saved 3 questions
+
+[32/75] 2020/national/state-religious (2020_national_state-religious_written.txt)
+  Found 15 candidate blocks
+  Found 41 answers in answer key
+  ✓ Saved 1 questions
+
+[33/75] 2020/school/state (2020_school_state_session-a.txt)
+  Found 35 candidate blocks
+  Found 35 answers in answer key
+  Progress: 10 questions extracted
+  AI error: HTTP Error 503: Service Unavailable
+  ✓ Saved 12 questions
+
+[34/75] 2020/school/state-religious (2020_school_state-religious_session-a.txt)
+  Found 34 candidate blocks
+  Found 35 answers in answer key
+  AI error: HTTP Error 503: Service Unavailable
+  ✓ Saved 9 questions
+
+[35/75] 2021/district/state (2021_district_state_written.txt)
+  Found 50 candidate blocks
+  ✓ Saved 2 questions
+
+[36/75] 2021/district/state-religious (2021_district_state-religious_written.txt)
+  Found 48 candidate blocks
+  ✓ Saved 7 questions
+
+[37/75] 2021/national/state (2021_national_state_written.txt)
+  Found 50 candidate blocks
+  AI error: HTTP Error 503: Service Unavailable
+  ✓ Saved 6 questions
+
+[38/75] 2021/national/state-religious (2021_national_state-religious_written.txt)
+  Found 51 candidate blocks
+  AI error: HTTP Error 503: Service Unavailable
+  ✓ Saved 5 questions
+
+[39/75] 2021/school/state (2021_school_state_questions.txt)
+  Found 46 candidate blocks
+  Progress: 10 questions extracted
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  Progress: 20 questions extracted
+  ✓ Saved 21 questions
+
+[40/75] 2021/school/state-religious (2021_school_state-religious_questions.txt)
+  Found 48 candidate blocks
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  Progress: 10 questions extracted
+  ✓ Saved 18 questions
+
+[41/75] 2022/district/state (2022_district_state_written.txt)
+  Found 27 candidate blocks
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  AI error: HTTP Error 503: Service Unavailable
+  ✓ Saved 1 questions
+
+[42/75] 2022/district/state-religious (2022_district_state-religious_written.txt)
+  Found 19 candidate blocks
+  ✓ Saved 0 questions
+
+[43/75] 2022/national/mixed (2022_national_mixed_booklet.txt)
+  Found 7 candidate blocks
+  ✓ Saved 0 questions
+
+[44/75] 2022/national/state (2022_national_state_prelim.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+[45/75] 2022/national/state-religious (2022_national_state-religious_prelim.txt)
+  Found 47 candidate blocks
+  ✓ Saved 5 questions
+
+[46/75] 2022/school/state (2022_school_state_session-a.txt)
+  Found 27 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 15 questions
+
+[47/75] 2022/school/state-religious (2022_school_state-religious_session-a.txt)
+  Found 7 candidate blocks
+  ✓ Saved 2 questions
+
+[48/75] 2022/world/mixed (2022_world_mixed_prelim.txt)
+  Found 59 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 10 questions
+
+[49/75] 2023/district/state (2023_district_state_written.txt)
+  Found 42 candidate blocks
+  Found 44 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 19 questions
+
+[50/75] 2023/district/state-religious (2023_district_state-religious_written.txt)
+  Found 36 candidate blocks
+  Found 41 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 15 questions
+
+[51/75] 2023/national/mixed (2023_national_mixed_booklet.txt)
+  Found 6 candidate blocks
+  ✓ Saved 0 questions
+
+[52/75] 2023/national/state (2023_national_state_prelim.txt)
+  Found 33 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 10 questions
+
+[53/75] 2023/national/state-religious (2023_national_state-religious_prelim.txt)
+  Found 30 candidate blocks
+  ✓ Saved 6 questions
+
+[54/75] 2023/school/state (2023_school_state_questions.txt)
+  Found 34 candidate blocks
+  Found 35 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 17 questions
+
+[55/75] 2023/school/state-religious (2023_school_state-religious_questions-a.txt)
+  Found 32 candidate blocks
+  Found 35 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 12 questions
+
+[56/75] 2024/district/state (2024_district_state_written.txt)
+  Found 57 candidate blocks
+  Found 45 answers in answer key
+  Progress: 10 questions extracted
+  Progress: 20 questions extracted
+  ✓ Saved 25 questions
+
+[57/75] 2024/district/state-religious (2024_district_state-religious_written.txt)
+  Found 49 candidate blocks
+  Found 46 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 16 questions
+
+[58/75] 2024/national/state (2024_national_state_questions.txt)
+  Found 41 candidate blocks
+  Found 35 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 12 questions
+
+[59/75] 2024/national/state-religious (2024_national_state-religious_questions.txt)
+  Found 36 candidate blocks
+  Found 39 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 12 questions
+
+[60/75] 2024/school/state (2024_school_state_questions.txt)
+  Found 29 candidate blocks
+  Found 29 answers in answer key
+  Progress: 10 questions extracted
+  ✓ Saved 18 questions
+
+[61/75] 2024/school/state-religious (2024_school_state-religious_questions.txt)
+  Found 26 candidate blocks
+  Found 30 answers in answer key
+  ✓ Saved 9 questions
+
+[62/75] 2024/world/mixed (2024_world_mixed_written.txt)
+  Found 50 candidate blocks
+  Found 43 answers in answer key
+  Progress: 10 questions extracted
+  Progress: 20 questions extracted
+  ✓ Saved 20 questions
+
+[63/75] 2024/world/state-religious (2024_world_state-religious_questions.txt)
+  Found 13 candidate blocks
+  ✓ Saved 1 questions
+
+[64/75] 2025/district/state (2025_district_state_prelim.txt)
+  Found 1 candidate blocks
+  ✓ Saved 0 questions
+
+[65/75] 2025/district/state-religious (2025_district_state-religious_prelim.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+[66/75] 2025/national/state (2025_national_state_written2.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+[67/75] 2025/national/state-religious (2025_national_state-religious_written1.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+[68/75] 2025/school/state (2025_school_state_qa.txt)
+  Found 35 candidate blocks
+  Progress: 10 questions extracted
+  ✓ Saved 12 questions
+
+[69/75] 2025/school/state-religious (2025_school_state-religious_qa.txt)
+  Found 1 candidate blocks
+  ✓ Saved 0 questions
+
+[70/75] 2025/world/state-religious (2025_world_state-religious_questions.txt)
+  Found 8 candidate blocks
+  ✓ Saved 0 questions
+
+[71/75] 2026/district/haredi (2026_district_haredi_booklet.txt)
+  Found 6 candidate blocks
+  ✓ Saved 0 questions
+
+[72/75] 2026/district/state (2026_district_state_prelim.txt)
+  Found 1 candidate blocks
+  ✓ Saved 0 questions
+
+[73/75] 2026/district/state-religious (2026_district_state-religious_prelim.txt)
+  Found 1 candidate blocks
+  ✓ Saved 0 questions
+
+[74/75] 2026/school/state (2026_school_state_qa.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+[75/75] 2026/school/state-religious (2026_school_state-religious_qa.txt)
+  Found 0 candidate blocks
+  ✓ Saved 0 questions
+
+=== Done! Total: 583 new questions extracted ===
