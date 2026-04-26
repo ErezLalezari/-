@@ -653,9 +653,12 @@ function Store({children}) {
   // Load extra questions from Supabase and merge into DB
   useEffect(()=>{
     if(!supabase) return;
-    supabase.from("questions").select("*").then(({data})=>{
+    supabase.from("questions").select("*").then(({data,error})=>{
+      if(error){console.warn("[Supabase] Failed to load questions:",error.message);return;}
       if(!data||!data.length) return;
+      let added=0;
       data.forEach(row=>{
+        if(!row.topic||!row.id) return;
         if(!DB[row.topic]) DB[row.topic]=[];
         if(DB[row.topic].some(q=>q.id===row.id)) return;
         const q = {id:row.id, type:row.type==="open"?Q.OPEN:Q.MULTIPLE, q:row.q, hint:row.hint||"", exp:row.exp||""};
@@ -663,9 +666,10 @@ function Store({children}) {
         if(row.type==="open") q.acceptedAnswers=row.accepted_answers||[];
         else { q.a=row.a; q.o=row.options||[]; }
         DB[row.topic].push(q);
+        added++;
       });
-      console.log(`[Supabase] Loaded ${data.length} extra questions`);
-    });
+      console.log(`[Supabase] Loaded ${added}/${data.length} extra questions`);
+    }).catch(e=>console.warn("[Supabase] questions error:",e?.message));
   },[]);
 
   return <Ctx.Provider value={{state,dispatch}}>{children}</Ctx.Provider>;
@@ -1127,7 +1131,7 @@ function BookIntro({nav,params}) {
   const [animIn,setAnimIn]=useState(true);
   const timerRef=useRef(null);
 
-  useEffect(()=>{ if(!sum) nav("quiz",params); },[]);
+  useEffect(()=>{ if(!sum&&topic) nav("quiz",params); },[sum,topic?.id]);
   useEffect(()=>{
     if(!sum||step>=sum.length) return;
     if(state.audioOn) Audio.speak(sum[step],{rate:0.85});
@@ -1218,6 +1222,8 @@ function DailyChallenge({nav}) {
     dispatch({type:"DAILY_DONE"});
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:false});
     logQuizResult(q.id, q.topic||"daily", ok, false, 0);
+    // Update mastery if topic exists
+    if(supabase&&q.topic&&q.topic!=="daily"&&q.topic!=="mixed") recordAttempt(supabase, q.topic, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
     setLoading(true);
     const fallback=ok?`✅ ${q.exp}`:`💡 התשובה הנכונה: ${q.a}. ${q.exp}`;
     const e=await explainAnswer({q:qShuffled,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>fallback);
@@ -1468,20 +1474,30 @@ function Quiz({nav,params,online}) {
   const isReview=mode===MODE.REVIEW;
   const session=state.session;
 
-  useEffect(()=>{ dispatch({type:"START",topic,mode}); },[]);
+  useEffect(()=>{ dispatch({type:"START",topic,mode}); },[topic?.id,mode]);
 
-  // For review mode: try to generate AI variations in background
+  // For review mode: try to generate AI variations sequentially in background
   useEffect(()=>{
     if(!isReview||!session||!online) return;
-    session.queue.forEach(async(q,i)=>{
-      if(i<=session.idx) return; // skip already answered
-      const topicName=ALL_TOPICS.find(t=>DB[t.id]?.some(x=>x.id===q.id))?.name||"תנ\"ך";
-      const variation=await generateVariation(q,topicName);
-      if(variation&&session.queue[i]){
-        session.queue[i]={...variation,_originalId:q.id,hint:variation.hint||q.hint,exp:variation.exp||q.exp};
+    let cancelled=false;
+    const queueRef=session.queue;
+    const generateSequentially=async()=>{
+      for(let i=session.idx+1;i<queueRef.length;i++){
+        if(cancelled) return;
+        const q=queueRef[i];
+        if(!q||q._isVariation) continue;
+        try{
+          const topicName=ALL_TOPICS.find(t=>DB[t.id]?.some(x=>x.id===q.id))?.name||"תנ\"ך";
+          const variation=await generateVariation(q,topicName);
+          if(!cancelled&&variation&&queueRef[i]){
+            queueRef[i]={...variation,_isVariation:true,_originalId:q.id,hint:variation.hint||q.hint,exp:variation.exp||q.exp};
+          }
+        }catch(e){console.warn("[review variation]",e?.message);}
       }
-    });
-  },[isReview,session?.queue?.length]);
+    };
+    generateSequentially();
+    return()=>{cancelled=true;};
+  },[isReview,session?.queue?.length,online]);
 
   useEffect(()=>{
     if(!isExam||!session)return;
@@ -1524,7 +1540,10 @@ function Quiz({nav,params,online}) {
     setSel(timeout?"⏰ פג הזמן":opt);
     if(!isMulti)setOpenOk(ok);
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:!isMulti,answerTime:at});
-    logQuizResult(q.id, state.session?.topic?.id, ok, !isMulti, at);
+    const tid=state.session?.topic?.id;
+    logQuizResult(q.id, tid, ok, !isMulti, at);
+    // Also update mastery system (L0 = story level for regular quiz)
+    if(supabase&&tid&&tid!=="mixed") recordAttempt(supabase, tid, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
     if(ok){Audio.correct();Audio.vCorrect();doFlash("green");burst();}
     else{Audio.wrong();Audio.vWrong();doFlash("red");}
     const ca=isMulti?q.a:(q.acceptedAnswers||[])[0]||"";
@@ -2851,6 +2870,8 @@ function DailyLesson({nav, params, online}) {
     if (ok) {setCorrect(c => c + 1); Audio.correct(); Audio.vCorrect();}
     else {Audio.wrong(); Audio.vWrong();}
     logQuizResult(q.id, dayData.book, ok, false, 0);
+    // Update mastery (Daily Lesson = L0 story level)
+    if(supabase&&dayData.book) recordAttempt(supabase, dayData.book, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
   };
   const nextQuestion = () => {
     if (quizIdx >= quizQuestions.length - 1) {
@@ -2953,84 +2974,6 @@ function DailyLesson({nav, params, online}) {
 }
 
 // ── CURRICULUM PATH (Duolingo-style) ────────
-function CurriculumPath({nav}) {
-  const {state} = useS();
-  const completed = state.completedDays || [];
-  const current = state.currentDay || 1;
-  const pathRef = useRef(null);
-
-  // Scroll to current day on mount
-  useEffect(() => {
-    if (pathRef.current) {
-      const el = pathRef.current.querySelector(`[data-day="${current}"]`);
-      if (el) setTimeout(()=>el.scrollIntoView({behavior:"smooth",block:"center"}), 300);
-    }
-  }, []);
-
-  // Group days into weeks (8 days per week)
-  const weeks = [];
-  for (let i = 0; i < CURRICULUM.length; i += 8) {
-    weeks.push(CURRICULUM.slice(i, i + 8));
-  }
-
-  const dayStatus = (day) => {
-    if (completed.includes(day)) return "completed";
-    if (day === current) return "current";
-    if (day < current) return "available";
-    return "locked";
-  };
-
-  return <div ref={pathRef} style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto"}}>
-    {/* Header */}
-    <div style={{textAlign:"center",padding:"8px 0 16px",position:"sticky",top:0,background:T.bg,zIndex:2}}>
-      <div style={{fontSize:13,color:T.muted,marginBottom:2}}>המסע של לייה</div>
-      <h1 style={{fontSize:22,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>30 ימים בתנ״ך</h1>
-      <div style={{fontSize:14,color:T.muted,marginTop:4}}>יום {current} מתוך {CURRICULUM.length} · {completed.length} הושלמו</div>
-    </div>
-
-    {/* Path */}
-    <div style={{flex:1,paddingBottom:20}}>
-      {weeks.map((week, wi) => {
-        const weekNum = wi + 1;
-        const weekTitles = ["בראשית — ההתחלה","יציאת מצרים","המדבר וכיבוש הארץ","סיפורים נבחרים"];
-        return <div key={wi} style={{marginBottom:24}}>
-          <div style={{fontSize:13,color:T.gold,fontWeight:700,textAlign:"center",marginBottom:14,letterSpacing:1}}>שבוע {weekNum} · {weekTitles[wi]}</div>
-          {week.map((d, i) => {
-            const st = dayStatus(d.day);
-            const isEven = i % 2 === 0;
-            const offset = isEven ? "translateX(-30px)" : "translateX(30px)";
-            const isLocked = st === "locked";
-            const isCompleted = st === "completed";
-            const isCurrent = st === "current";
-            const score = state.dayScores?.[d.day];
-            return <div key={d.day} data-day={d.day} style={{display:"flex",justifyContent:"center",marginBottom:14,transform:offset}}>
-              <button onClick={()=>!isLocked && nav("lesson",{day:d.day})} disabled={isLocked} style={{
-                width:96,height:96,borderRadius:48,
-                background: isCompleted ? `linear-gradient(145deg,${d.color},${d.color}aa)` :
-                           isCurrent ? `linear-gradient(145deg,${T.gold},#FF8C00)` :
-                           "rgba(255,255,255,0.04)",
-                border: isLocked ? "2px solid rgba(255,255,255,0.08)" :
-                       isCurrent ? "3px solid #FFD700" :
-                       `2px solid ${d.color}`,
-                cursor: isLocked ? "default" : "pointer",
-                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                gap:2,position:"relative",transition:"all 0.2s",
-                boxShadow: isCurrent ? `0 0 20px ${T.gold}66` : isCompleted ? `0 4px 12px ${d.color}44` : "none",
-                opacity: isLocked ? 0.4 : 1,
-              }}>
-                <div style={{fontSize:isLocked?22:32}}>{isLocked?"🔒":d.emoji}</div>
-                {!isLocked && <div style={{fontSize:10,fontWeight:800,color:isCompleted||isCurrent?"#1a0533":d.color,lineHeight:1}}>יום {d.day}</div>}
-                {isCompleted && score !== undefined && <div style={{fontSize:9,fontWeight:700,color:"#1a0533"}}>{score}%</div>}
-                {isCompleted && <div style={{position:"absolute",top:-6,right:-6,width:24,height:24,borderRadius:12,background:T.success,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:"2px solid #0a0818"}}>✓</div>}
-              </button>
-            </div>;
-          })}
-        </div>;
-      })}
-    </div>
-  </div>;
-}
-
 function TabHome({nav}) {
   const {state,dispatch}=useS();
   const dailyDone = Engine.isDailyDone(state.lastDaily);
