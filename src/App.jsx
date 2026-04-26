@@ -3030,6 +3030,10 @@ function TabHome({nav}) {
   const currentDay = state.currentDay || 1;
   const todaysLesson = getDay(currentDay);
   const isFriday = new Date().getDay() === 5;
+  const completed = state.completedDays || [];
+  const progressPct = Math.round(completed.length / CURRICULUM.length * 100);
+  const weekNum = weekOf(currentDay);
+  const weekDiscussions = SHABBAT_DISCUSSIONS[weekNum] || [];
 
   return <div style={{display:"flex",flexDirection:"column",height:"100%",gap:12,overflowY:"auto"}}>
     {/* Compact greeting */}
