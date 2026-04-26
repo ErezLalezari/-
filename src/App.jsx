@@ -2793,7 +2793,7 @@ const SCREENS = {
   fillblank:FillBlank, scramble:WordScramble, matching:MatchingPairs, dialogue:Dialogue, study:StudyMode,
   lesson:DailyLesson,
   realquiz:RealQuiz, mockexam:MockExam, coverage:CoverageMap,
-  "level-quiz":LevelQuiz, mastery:MasteryDashboard,
+  "level-quiz":LevelQuiz, mastery:MasteryDashboard, hall:HallOfFame,
 };
 
 // ── TAB: HOME ───────────────────────────────
@@ -3229,7 +3229,8 @@ function TabProfile({nav}) {
     <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
       {[
         {emoji:"📊",label:"סטטיסטיקות מלאות",screen:"stats",color:"#fff"},
-        {emoji:"🏆",label:"הישגים",screen:"achievements",color:T.gold},
+        {emoji:"🏆",label:"היכל התהילה",screen:"hall",color:T.gold},
+        {emoji:"⭐",label:"הישגים ישנים",screen:"achievements",color:T.gold},
         {emoji:"📖",label:"מילון מונחים",screen:"glossary",color:"#4ECDC4"},
         {emoji:"👨‍👩‍👧",label:"לוח הורים",screen:"parent",color:"#C3A6FF"},
       ].map(item=><button key={item.screen} onClick={()=>nav(item.screen)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.md,cursor:"pointer",color:"#fff",fontSize:16,textAlign:"right",minHeight:48}}>
@@ -3571,6 +3572,97 @@ function CoverageMap({nav}) {
   </div>;
 }
 
+// ── CELEBRATION — full-screen win animation ──
+function Celebration({type, title, subtitle, onClose}) {
+  const [particles,setParticles]=useState([]);
+  useEffect(()=>{
+    Audio.fanfare();
+    Audio.vCorrect();
+    // Generate confetti
+    const p=Array.from({length:60},(_,i)=>({
+      id:i,
+      x:Math.random()*100,
+      delay:Math.random()*0.5,
+      color:["#FFD700","#FF6B6B","#4ECDC4","#FFB347","#C3A6FF","#5DFC8A"][i%6],
+      size:6+Math.random()*8,
+      rot:Math.random()*360,
+    }));
+    setParticles(p);
+    const t=setTimeout(()=>onClose&&onClose(),4500);
+    return()=>clearTimeout(t);
+  },[]);
+
+  const themes={
+    "level-mastered":{emoji:"🏆",bg:"linear-gradient(135deg,#FFD70022,#FF8C0011)",glow:"#FFD700"},
+    "book-mastered":{emoji:"👑",bg:"linear-gradient(135deg,#5DFC8A22,#4ECDC411)",glow:"#5DFC8A"},
+    "streak":{emoji:"🔥",bg:"linear-gradient(135deg,#FF6B6B22,#FF8C0011)",glow:"#FF6B6B"},
+    "first-time":{emoji:"⭐",bg:"linear-gradient(135deg,#FFD70022,#C3A6FF11)",glow:"#FFD700"},
+    "perfect":{emoji:"💯",bg:"linear-gradient(135deg,#5DFC8A22,#FFD70011)",glow:"#5DFC8A"},
+  };
+  const theme=themes[type]||themes["level-mastered"];
+
+  return<div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(10,8,24,0.92)",backdropFilter:"blur(8px)"}} onClick={onClose}>
+    {/* Confetti */}
+    {particles.map(p=><div key={p.id} style={{
+      position:"fixed",top:"-20px",left:`${p.x}%`,width:p.size,height:p.size,
+      background:p.color,borderRadius:p.size>10?"50%":2,
+      animation:`confettiFall 2.5s ${p.delay}s ease-out forwards`,
+      transform:`rotate(${p.rot}deg)`,zIndex:10000,
+    }}/>)}
+
+    <div style={{
+      textAlign:"center",padding:"40px 28px",
+      background:theme.bg,
+      border:`2px solid ${theme.glow}66`,borderRadius:24,
+      boxShadow:`0 0 60px ${theme.glow}66`,
+      animation:"popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both",
+      maxWidth:340,
+    }}>
+      <div style={{fontSize:96,animation:"float 2s ease-in-out infinite"}}>{theme.emoji}</div>
+      <h2 style={{fontSize:30,fontWeight:900,color:theme.glow,margin:"12px 0 8px",textShadow:`0 0 20px ${theme.glow}88`}}>{title}</h2>
+      {subtitle&&<p style={{fontSize:16,color:"#fff",lineHeight:1.6,margin:"6px 0 18px",opacity:0.9}}>{subtitle}</p>}
+      <button onClick={onClose} style={{background:`linear-gradient(135deg,${theme.glow},${theme.glow}aa)`,border:"none",borderRadius:24,padding:"12px 32px",color:"#1a0533",fontWeight:800,fontSize:16,cursor:"pointer"}}>
+        🚀 ממשיכה
+      </button>
+    </div>
+  </div>;
+}
+
+// ── ENCOURAGEMENT MESSAGES ──────────────────
+const ENCOURAGEMENTS = {
+  perfect: [
+    "וואו! מושלם! את אלופה אמיתית 🏆",
+    "בלי טעויות בכלל! מעולה! 💯",
+    "זה מדהים! את ממש מבינה את החומר 🌟",
+    "לייה את גאון! ⭐",
+  ],
+  excellent: [
+    "כל הכבוד לייה! 🎉",
+    "יפה מאוד! את משתפרת כל הזמן 💪",
+    "מעולה! ממש טוב! ✨",
+  ],
+  good: [
+    "יופי לייה! בדרך הנכונה 👍",
+    "לא רע בכלל! ממשיכה ככה 🌟",
+    "תרגול עוד תרגול ותהיי אלופה 💪",
+  ],
+  effort: [
+    "כל הכבוד שניסית! 💖",
+    "אל תוותרי! כל אחת לומדת בקצב שלה 🌱",
+    "התרגול הוא המורה הכי טוב 📚",
+    "את מתקדמת גם אם זה לא מרגיש ככה 💪",
+  ],
+};
+
+function pickEncouragement(pct){
+  let pool;
+  if(pct===100) pool=ENCOURAGEMENTS.perfect;
+  else if(pct>=80) pool=ENCOURAGEMENTS.excellent;
+  else if(pct>=60) pool=ENCOURAGEMENTS.good;
+  else pool=ENCOURAGEMENTS.effort;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
 // ── LEVEL QUIZ — adaptive exercise at specific (book, level) ──
 function LevelQuiz({nav, params}) {
   const bookId=params?.book;
@@ -3585,6 +3677,8 @@ function LevelQuiz({nav, params}) {
   const [correct,setCorrect]=useState(0);
   const [done,setDone]=useState(false);
   const [newlyMastered,setNewlyMastered]=useState(false);
+  const [showCelebration,setShowCelebration]=useState(null);
+  const [encourageMsg,setEncourageMsg]=useState("");
   const TARGET_QUESTIONS=8;
 
   useEffect(()=>{
@@ -3632,26 +3726,32 @@ function LevelQuiz({nav, params}) {
   if(done){
     const pct=Math.round(correct/questions.length*100);
     const passed=pct>=lvl.masterPct;
-    return<div style={{padding:24,textAlign:"center"}}>
-      <div style={{fontSize:80,animation:"float 2s ease-in-out infinite"}}>{newlyMastered?"🏆":passed?"⭐":pct>=50?"💪":"📚"}</div>
-      {newlyMastered?<>
-        <h2 style={{fontSize:26,color:T.success,margin:"8px 0"}}>שולטת ב{lvl.name}!</h2>
-        <div style={{fontSize:14,color:T.muted,marginBottom:8}}>{book.emoji} {book.name}</div>
-        <div style={{padding:"14px 16px",background:`${T.success}11`,border:`1px solid ${T.success}44`,borderRadius:T.r.md,marginBottom:14}}>
-          <div style={{fontSize:14,color:T.success}}>🎉 הרמה הבאה נפתחה!</div>
-          {level<LEVELS.length-1&&<div style={{fontSize:13,color:T.muted,marginTop:4}}>{LEVELS[level+1].emoji} {LEVELS[level+1].name}</div>}
+    const isPerfect=pct===100;
+    return<>
+      {showCelebration&&<Celebration {...showCelebration} onClose={()=>setShowCelebration(null)}/>}
+      <div style={{padding:24,textAlign:"center",height:"100%",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+        <div style={{fontSize:isPerfect?96:80,animation:"float 2s ease-in-out infinite"}}>{newlyMastered?"🏆":isPerfect?"💯":passed?"⭐":pct>=50?"💪":"🌱"}</div>
+        {newlyMastered?<>
+          <h2 style={{fontSize:28,color:T.success,margin:"12px 0 6px",fontWeight:900}}>שלטת ב{lvl.name}!</h2>
+          <div style={{fontSize:15,color:"#fff",marginBottom:10}}>{book.emoji} {book.name}</div>
+          <div style={{padding:"14px 16px",background:`${T.success}14`,border:`1px solid ${T.success}55`,borderRadius:T.r.md,marginBottom:14}}>
+            <div style={{fontSize:14,color:T.success,fontWeight:700}}>🎉 הרמה הבאה נפתחה!</div>
+            {level<LEVELS.length-1&&<div style={{fontSize:13,color:"#fff",marginTop:6}}>{LEVELS[level+1].emoji} {LEVELS[level+1].name}</div>}
+          </div>
+        </>:<>
+          <h2 style={{fontSize:24,color:passed?T.success:T.gold,margin:"12px 0 6px",fontWeight:800}}>{encourageMsg||(passed?"מעולה!":"כל הכבוד")}</h2>
+          <div style={{fontSize:54,fontWeight:900,color:isPerfect?T.success:passed?T.success:T.gold,margin:"4px 0"}}>{correct}/{questions.length}</div>
+          <div style={{color:T.muted,fontSize:13,marginBottom:10}}>{pct}% · {book.name} · {lvl.name}</div>
+          {!passed&&<div style={{padding:"10px 14px",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.3)",borderRadius:T.r.sm,fontSize:12,color:T.gold,marginBottom:12}}>
+            💡 כל פעם שתחזרי תהיי טובה יותר. צריך {lvl.masterPct}% כדי לעלות לרמה הבאה
+          </div>}
+        </>}
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <Btn onClick={()=>{setIdx(0);setCorrect(0);setSel(null);setAnswered(false);setDone(false);setNewlyMastered(false);setEncourageMsg("");}} style={{flex:1,marginBottom:0}}>🔄 עוד פעם</Btn>
+          <Btn v="ghost" onClick={()=>nav("mastery")} style={{flex:1,marginBottom:0}}>📊 ידע</Btn>
         </div>
-      </>:<>
-        <h2 style={{fontSize:24,color:passed?T.success:T.gold,margin:"8px 0"}}>{passed?"מעולה!":"כל הכבוד"}</h2>
-        <div style={{fontSize:48,fontWeight:800,color:passed?T.success:T.gold}}>{correct}/{questions.length}</div>
-        <div style={{color:T.muted,fontSize:13}}>{pct}% · {book.name} · {lvl.name}</div>
-        {!passed&&<div style={{fontSize:12,color:T.muted,marginTop:8}}>צריך {lvl.masterPct}% כדי לעבור לרמה הבאה</div>}
-      </>}
-      <div style={{display:"flex",gap:8,marginTop:18}}>
-        <Btn onClick={()=>{setIdx(0);setCorrect(0);setSel(null);setAnswered(false);setDone(false);setNewlyMastered(false);}} style={{flex:1,marginBottom:0}}>🔄 שוב</Btn>
-        <Btn v="ghost" onClick={()=>nav("mastery")} style={{flex:1,marginBottom:0}}>📊 מפת ידע</Btn>
       </div>
-    </div>;
+    </>;
   }
 
   const q=questions[idx];
@@ -3675,7 +3775,35 @@ function LevelQuiz({nav, params}) {
   };
 
   const next=()=>{
-    if(idx>=questions.length-1){setDone(true);return;}
+    if(idx>=questions.length-1){
+      const finalCorrect=correct;
+      const pct=Math.round(finalCorrect/questions.length*100);
+      const isPerfect=pct===100;
+      const passed=pct>=lvl.masterPct;
+      setEncourageMsg(pickEncouragement(pct));
+      setDone(true);
+      // Trigger celebration based on outcome
+      if(newlyMastered){
+        setShowCelebration({
+          type:"level-mastered",
+          title:`שלטת ב${lvl.name}!`,
+          subtitle:`${book.name} ${book.emoji}\nהרמה הבאה נפתחה 🎉`
+        });
+      } else if(isPerfect){
+        setShowCelebration({
+          type:"perfect",
+          title:"מושלם!",
+          subtitle:`${finalCorrect}/${questions.length} נכון בלי טעות אחת!`
+        });
+      } else if(passed){
+        setShowCelebration({
+          type:"first-time",
+          title:"מעולה לייה!",
+          subtitle:`${pct}% הצלחה · עוד מעט תשלטי לגמרי ⭐`
+        });
+      }
+      return;
+    }
     setIdx(i=>i+1);setSel(null);setAnswered(false);
   };
 
@@ -3707,6 +3835,60 @@ function LevelQuiz({nav, params}) {
 }
 
 // ── MASTERY DASHBOARD — heatmap of book × level ──
+// ── HALL OF FAME — celebrate mastered levels ──
+function HallOfFame({nav}){
+  const [masteredCells,setMasteredCells]=useState([]);
+  const [stats,setStats]=useState({total:0,thisWeek:0});
+
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.from("mastery").select("*").not("mastered_at","is",null).order("mastered_at",{ascending:false}).then(({data})=>{
+      const cells=(data||[]).map(r=>({
+        book:BOOK_BY_ID[r.book],
+        level:LEVELS[r.level],
+        masteredAt:new Date(r.mastered_at),
+        score:r.score,
+      }));
+      setMasteredCells(cells);
+      const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
+      setStats({
+        total:cells.length,
+        thisWeek:cells.filter(c=>c.masteredAt>=weekAgo).length,
+      });
+    });
+  },[]);
+
+  return<div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto",gap:14}}>
+    <div style={{textAlign:"center",padding:"4px 0"}}>
+      <div style={{fontSize:48,animation:"float 3s ease-in-out infinite"}}>🏆</div>
+      <h2 style={{fontSize:22,fontWeight:900,margin:"6px 0 2px",color:"#fff"}}>ההישגים של לייה</h2>
+      <div style={{fontSize:13,color:T.muted}}>{stats.total} רמות נשלטו · {stats.thisWeek} השבוע</div>
+    </div>
+
+    {masteredCells.length===0?<div style={{padding:40,textAlign:"center",background:"rgba(255,255,255,0.04)",borderRadius:T.r.lg}}>
+      <div style={{fontSize:64,marginBottom:12}}>🌱</div>
+      <h3 style={{color:"#fff",margin:"0 0 8px"}}>ההתחלה שלך כאן!</h3>
+      <p style={{color:T.muted,fontSize:14,lineHeight:1.7}}>כל פעם שתשלטי ברמה — היא תופיע כאן.<br/>בואי נתחיל את המסע 🚀</p>
+      <Btn onClick={()=>nav("mastery")} style={{marginTop:14,maxWidth:200,marginLeft:"auto",marginRight:"auto"}}>📊 לראות מפת ידע</Btn>
+    </div>:<div>
+      {masteredCells.map((c,i)=><div key={i} style={{
+        display:"flex",alignItems:"center",gap:14,
+        padding:"14px 16px",marginBottom:8,
+        background:`linear-gradient(135deg,${T.success}11,${T.gold}08)`,
+        border:`1px solid ${T.success}44`,borderRadius:T.r.md,
+      }}>
+        <div style={{fontSize:36}}>{c.level.emoji}</div>
+        <div style={{flex:1,textAlign:"right"}}>
+          <div style={{fontWeight:700,fontSize:15,color:"#fff"}}>{c.book?.name||"?"} {c.book?.emoji}</div>
+          <div style={{fontSize:13,color:T.success}}>{c.level.name}</div>
+          <div style={{fontSize:11,color:T.muted,marginTop:2}}>{c.masteredAt.toLocaleDateString("he-IL")}</div>
+        </div>
+        <div style={{fontSize:24,fontWeight:800,color:T.success}}>{Math.round(c.score)}%</div>
+      </div>)}
+    </div>}
+  </div>;
+}
+
 function MasteryDashboard({nav}) {
   const [matrix,setMatrix]=useState(null);
   const [progress,setProgress]=useState(null);
