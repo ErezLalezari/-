@@ -4015,6 +4015,17 @@ const TABS=[
 ];
 const TAB_SCREENS={home:TabHome,mastery:MasteryDashboard,official:TabOfficial,games:TabGames,profile:TabProfile};
 
+const SCREEN_LABELS={
+  intro:"📖 לימוד ספר",quiz:"❓ חידון",result:"📊 תוצאות",
+  daily:"📅 אתגר יומי",aigen:"✨ שאלות AI",tutor:"🤖 מורה AI",
+  map:"🗺️ מפת ספרים",stats:"📊 סטטיסטיקות",achievements:"🏆 הישגים",
+  glossary:"📖 מילון",parent:"👨‍👩‍👧 הורים",summary:"📊 סיכום",
+  teacher:"👩‍🏫 מורה",fillblank:"📝 השלם משפט",scramble:"🔤 תפזורת",
+  matching:"🔗 התאמה",dialogue:"💬 דבר עם דמות",study:"📚 מצב לימוד",
+  lesson:"📖 שיעור היום",realquiz:"📜 חידון רשמי",mockexam:"⏱️ מבחן סימולציה",
+  coverage:"🗺️ מפת ספרי תנ\"ך","level-quiz":"🎯 תרגיל",hall:"🏆 היכל התהילה",
+};
+
 function Router({onLauncher}) {
   log("Router","mount");
   const initScreen=new URLSearchParams(window.location.search).get("screen")||"";
@@ -4059,13 +4070,17 @@ function Router({onLauncher}) {
       html,body{overscroll-behavior:none;overflow:hidden;height:100%;margin:0;padding:0;}
     `}</style>
 
+    {/* Top header on sub-screens */}
+    {isSubScreen&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(10,8,24,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",zIndex:50,flexShrink:0,position:"relative"}}>
+      <button onClick={goBack} aria-label="חזור" style={{minWidth:44,minHeight:44,borderRadius:22,background:"rgba(255,215,0,0.1)",border:"1.5px solid rgba(255,215,0,0.3)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:T.gold,fontWeight:700,padding:0}}>‹</button>
+      <div style={{flex:1,fontSize:15,fontWeight:700,color:"#fff",textAlign:"center"}}>{SCREEN_LABELS[subScreen?.screen]||""}</div>
+      <button onClick={()=>{setSubScreen(null);setTab("home");}} aria-label="בית" style={{minWidth:44,minHeight:44,borderRadius:22,background:"rgba(255,255,255,0.06)",border:"1.5px solid rgba(255,255,255,0.15)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"#fff",padding:0}}>🏠</button>
+    </div>}
+
     {/* Main content area */}
-    <div style={{flex:1,overflow:isSubScreen?"auto":"hidden",padding:"12px 14px",position:"relative",zIndex:1}}>
+    <div style={{flex:1,overflow:"auto",padding:"12px 14px",position:"relative",zIndex:1}}>
       {isSubScreen&&SubComp
-        ?<><SubComp nav={nav} params={subScreen?.params||{}} online={online} goBack={goBack}/>
-          {/* Floating back button on sub-screens */}
-          <button onClick={goBack} style={{position:"fixed",top:10,right:10,minHeight:44,borderRadius:22,background:"rgba(10,8,24,0.95)",border:"2px solid rgba(255,215,0,0.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"8px 16px 8px 12px",fontSize:14,fontWeight:700,color:T.gold,zIndex:9000,boxShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>✕ חזרה</button>
-        </>
+        ?<SubComp nav={nav} params={subScreen?.params||{}} online={online} goBack={goBack}/>
         :isSubScreen
           ?<div style={{padding:40,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>🤔</div><p style={{color:T.muted}}>מסך לא נמצא</p><Btn onClick={goBack}>חזרה</Btn></div>
         :TAB_SCREENS[tab]
@@ -4074,13 +4089,13 @@ function Router({onLauncher}) {
       }
     </div>
 
-    {/* Bottom tab bar */}
-    {!isSubScreen&&<div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.08)",background:"rgba(10,8,24,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"6px 0 env(safe-area-inset-bottom,8px)",zIndex:100,flexShrink:0}}>
-      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 0",background:"none",border:"none",cursor:"pointer",color:tab===t.id?T.gold:"rgba(255,255,255,0.35)",transition:"color 0.15s"}}>
+    {/* Bottom tab bar — always visible */}
+    <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.08)",background:"rgba(10,8,24,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"6px 0 env(safe-area-inset-bottom,8px)",zIndex:100,flexShrink:0}}>
+      {TABS.map(t=><button key={t.id} onClick={()=>{log("Router","tab-switch",t.id);setSubScreen(null);setTab(t.id);}} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"8px 0",background:"none",border:"none",cursor:"pointer",color:!isSubScreen&&tab===t.id?T.gold:"rgba(255,255,255,0.35)",transition:"color 0.15s"}}>
         <span style={{fontSize:22}}>{t.emoji}</span>
-        <span style={{fontSize:10,fontWeight:tab===t.id?700:400}}>{t.label}</span>
+        <span style={{fontSize:10,fontWeight:!isSubScreen&&tab===t.id?700:400}}>{t.label}</span>
       </button>)}
-    </div>}
+    </div>
 
     <FeedbackBtn screen={subScreen?.screen||tab}/>
   </div>;
