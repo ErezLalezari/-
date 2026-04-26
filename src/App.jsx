@@ -4061,10 +4061,6 @@ function Router({onLauncher}) {
 const APPS = [
   {id:"bible",name:"חידון התנ״ך",emoji:"📖",desc:"שאלות, משחקים ולמידה",color:"#FFD700",cs:"#FF8C00",ready:true},
   {id:"gifted",name:"כיתת מחוננים",emoji:"🧠",desc:"הכנה לקבלה לכיתת מחוננים",color:"#00C9FF",cs:"#0088CC",ready:false,comingSoon:"בפיתוח! יעודכן בקרוב"},
-  {id:"math",name:"מתמטיקה",emoji:"🔢",desc:"תרגול חשבון וגיאומטריה",color:"#4ECDC4",cs:"#45B7D1",ready:false},
-  {id:"english",name:"אנגלית",emoji:"🇬🇧",desc:"אוצר מילים ודקדוק",color:"#C3A6FF",cs:"#9B59B6",ready:false},
-  {id:"science",name:"מדעים",emoji:"🔬",desc:"ניסויים וגילויים",color:"#FF6B6B",cs:"#FF8E53",ready:false},
-  {id:"reading",name:"קריאה",emoji:"📚",desc:"סיפורים ואוצר מילים",color:"#FF85A1",cs:"#E91E8C",ready:false},
 ];
 
 function Launcher({onSelect}) {
