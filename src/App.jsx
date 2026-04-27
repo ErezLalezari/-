@@ -1205,21 +1205,45 @@ function Home({nav}) {
 }
 
 // ── BOOK INTRO ───────────────────────────────
-function BookIntro({nav,params}) {
+// Three phases:
+//   1. summary  — short hardcoded overview cards (SUMMARIES[topic.id])
+//   2. deep     — NEW: AI-generated study cards based on real questions in
+//                 DB[topic.id], so Liya actually sees the facts she'll be
+//                 tested on before the quiz starts. Optional, recommended.
+//   3. quiz     — navigate to /quiz
+// Earlier flow only had 1 → 3, so questions like "where was Yaakov buried"
+// hit her cold because the 4-line summary didn't mention Machpelah.
+function BookIntro({nav,params,online}) {
+  log("BookIntro","mount",{topic:params?.topic?.id});
   const {state}=useS();
   const topic=params?.topic;
   const sum=topic?SUMMARIES[topic.id]:null;
+  const [phase,setPhase]=useState("summary"); // summary → deep → quiz
   const [step,setStep]=useState(0);
   const [animIn,setAnimIn]=useState(true);
+  const [deepCards,setDeepCards]=useState(null);
+  const [deepIdx,setDeepIdx]=useState(0);
+  const [deepLoading,setDeepLoading]=useState(false);
+  const [deepError,setDeepError]=useState(null);
   const timerRef=useRef(null);
 
   useEffect(()=>{ if(!sum&&topic) nav("quiz",params); },[sum,topic?.id]);
   useEffect(()=>{
-    if(!sum||step>=sum.length) return;
+    if(phase!=="summary"||!sum||step>=sum.length) return;
     if(state.audioOn) Audio.speak(sum[step],{rate:0.85});
     timerRef.current=setTimeout(()=>advance(),5000);
     return()=>{clearTimeout(timerRef.current);Audio.stop();};
-  },[step]);
+  },[step,phase]);
+
+  // Read deep card aloud when it changes
+  useEffect(()=>{
+    if(phase!=="deep"||!deepCards||!deepCards[deepIdx]) return;
+    if(state.audioOn) {
+      const c=deepCards[deepIdx];
+      Audio.speak(`${c.title}. ${c.fact}`,{rate:0.85});
+    }
+    return()=>Audio.stop();
+  },[phase,deepIdx,deepCards]);
 
   const advance=()=>{
     if(step>=sum.length-1) return;
@@ -1232,10 +1256,99 @@ function BookIntro({nav,params}) {
     setTimeout(()=>{setStep(s=>s-1);setAnimIn(true);},250);
   };
 
+  // Generate AI study cards from REAL questions in DB[topic.id].
+  // Cards cover the specific facts she'll be tested on, not generic plot.
+  const generateDeepCards=async()=>{
+    const pool=(DB[topic.id]||[]);
+    if(!pool.length){
+      log("BookIntro","deep-skip-empty-pool",{topic:topic.id});
+      setDeepError("אין מספיק שאלות בנושא הזה — מתחילים חידון");
+      setTimeout(()=>nav("quiz",params),1200);
+      return;
+    }
+    if(!online){
+      log("BookIntro","deep-skip-offline",{topic:topic.id});
+      setDeepError("צריך אינטרנט בשביל זה — נמשיך לחידון");
+      setTimeout(()=>nav("quiz",params),1200);
+      return;
+    }
+    setDeepLoading(true);
+    setDeepError(null);
+    log("BookIntro","deep-generate-start",{topic:topic.id, pool:pool.length});
+    // Sample 5 representative questions for the cards
+    const sample=[...pool].sort(()=>Math.random()-0.5).slice(0,5);
+    const sampleText=sample.map((q,i)=>`${i+1}. ${q.q}\nתשובה: ${q.a||(q.acceptedAnswers||[])[0]||""}\n${q.exp?"הסבר: "+q.exp:""}`).join("\n\n");
+    const prompt=`לפניך 5 שאלות מתוך חידון תנ"ך על ספר ${topic.name}. הילדה לייה (בת 10) עומדת לקבל שאלות דומות ועדיין לא למדה את החומר. צרי לה 5 קלפי לימוד שיכינו אותה.
+
+השאלות שיופיעו בחידון:
+${sampleText}
+
+לכל שאלה צרי קלף לימוד שמסביר את הרקע, ההקשר והעובדה — כך שכשהיא תקבל את השאלה היא תבין למה התשובה היא התשובה. הסבירי בעברית פשוטה לבת 10, 3-5 משפטים לכל קלף.
+
+החזירי JSON בלבד (ללא טקסט נוסף לפני או אחרי):
+[
+  {"title":"כותרת קצרה","fact":"3-5 משפטים פשוטים","verse":"ציטוט פסוק (אופציונלי, אפשר להשמיט)","emoji":"📜"}
+]`;
+    try{
+      const raw=await callAI(prompt,2000);
+      const clean=(raw||"").replace(/```json|```/g,"").trim();
+      const m=clean.match(/\[[\s\S]*\]/);
+      const parsed=m?JSON.parse(m[0]):null;
+      if(parsed&&Array.isArray(parsed)&&parsed.length>0){
+        log("BookIntro","deep-generate-ok",{cards:parsed.length});
+        setDeepCards(parsed);
+        setDeepIdx(0);
+        setPhase("deep");
+      } else {
+        log("BookIntro","deep-generate-empty",{rawLen:raw?.length||0});
+        setDeepError("לא הצלחתי להכין חומר לימוד — נמשיך לחידון");
+        setTimeout(()=>nav("quiz",params),1500);
+      }
+    }catch(e){
+      log("BookIntro","deep-generate-ERROR",{message:e?.message||String(e)});
+      setDeepError("בעיה זמנית — נמשיך לחידון");
+      setTimeout(()=>nav("quiz",params),1500);
+    }
+    setDeepLoading(false);
+  };
+
+  const nextDeep=()=>{
+    if(deepIdx>=deepCards.length-1){ nav("quiz",params); return; }
+    setDeepIdx(i=>i+1);
+  };
+  const prevDeep=()=>{ if(deepIdx>0) setDeepIdx(i=>i-1); };
+
   if(!sum)return null;
   const done=step>=sum.length-1;
   const storyEmojis=["📜","⚡","🌟","✨","🔥","💫","🌈","👑"];
 
+  // ── DEEP LEARN PHASE — AI cards from real questions ──
+  if(phase==="deep"&&deepCards){
+    const card=deepCards[deepIdx]||{};
+    return <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+        <BackBtn onClick={()=>setPhase("summary")}/>
+        <h2 style={{margin:0,fontSize:18,flex:1}}>📚 לומדים את {topic.name}</h2>
+        <button onClick={()=>nav("quiz",params)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"5px 12px",color:T.muted,cursor:"pointer",fontSize:12}}>דלגי ▶</button>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:14}}>
+        {deepCards.map((_,i)=><div key={i} style={{flex:1,height:5,borderRadius:3,background:i<=deepIdx?topic.cp:"rgba(255,255,255,0.15)",transition:"all 0.3s"}}/>)}
+      </div>
+      <div style={{textAlign:"center",fontSize:11,color:topic.cp,fontWeight:700,marginBottom:8,letterSpacing:1}}>קלף לימוד {deepIdx+1}/{deepCards.length}</div>
+      <Card style={{padding:"24px 22px",borderColor:`${topic.cp}44`,minHeight:240,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:14}}>{card.emoji||"📖"}</div>
+        <div style={{fontSize:18,fontWeight:800,color:topic.cp,textAlign:"center",marginBottom:12}}>{card.title||""}</div>
+        <div style={{fontSize:16,lineHeight:1.9,color:"#fff",textAlign:"right"}}>{card.fact||""}</div>
+        {card.verse&&<div style={{marginTop:14,padding:"12px 14px",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.22)",borderRadius:T.r.sm,fontSize:14,fontStyle:"italic",color:T.gold,textAlign:"right"}}>📖 {card.verse}</div>}
+      </Card>
+      <div style={{display:"flex",gap:10,marginTop:14}}>
+        <button onClick={prevDeep} disabled={deepIdx===0} style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:deepIdx===0?T.muted:"#fff",cursor:deepIdx===0?"default":"pointer",fontWeight:700,fontSize:16,opacity:deepIdx===0?0.3:1}}>→ הקודם</button>
+        <button onClick={nextDeep} style={{flex:2,background:`linear-gradient(135deg,${topic.cp},${topic.cs})`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:16}}>{deepIdx>=deepCards.length-1?"🚀 לחידון!":"← הבא"}</button>
+      </div>
+    </div>;
+  }
+
+  // ── SUMMARY PHASE (existing short overview) ──
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
       <BackBtn onClick={()=>nav("home")}/>
@@ -1255,14 +1368,19 @@ function BookIntro({nav,params}) {
       <div style={{fontSize:18,lineHeight:1.8,fontWeight:600,color:"#fff",maxWidth:340}}>{sum[step]}</div>
     </Card>
 
+    {/* Loading / error feedback for deep-learn generation */}
+    {deepLoading&&<div style={{textAlign:"center",marginTop:14,padding:"14px 18px",background:"rgba(255,215,0,0.08)",border:"1px solid rgba(255,215,0,0.22)",borderRadius:T.r.md,color:T.gold,fontSize:14,animation:"pulse 1.2s infinite"}}>✨ מכינה לך חומר לימוד מותאם...</div>}
+    {deepError&&<div style={{textAlign:"center",marginTop:14,padding:"12px 16px",background:"rgba(255,107,107,0.08)",border:"1px solid rgba(255,107,107,0.22)",borderRadius:T.r.md,color:T.danger,fontSize:13}}>{deepError}</div>}
+
     {/* Navigation */}
     <div style={{display:"flex",gap:10,marginTop:14}}>
-      <button onClick={goBack} disabled={step===0} style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:step===0?T.muted:"#fff",cursor:step===0?"default":"pointer",fontWeight:700,fontSize:16,opacity:step===0?0.3:1}}>→ הקודם</button>
+      <button onClick={goBack} disabled={step===0||deepLoading} style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"14px",color:step===0?T.muted:"#fff",cursor:step===0||deepLoading?"default":"pointer",fontWeight:700,fontSize:16,opacity:step===0||deepLoading?0.3:1}}>→ הקודם</button>
       {done
-        ?<Btn onClick={()=>nav("quiz",params)} style={{flex:2,fontSize:17,marginBottom:0}}>🚀 יאללה, מתחילים!</Btn>
+        ?<button onClick={generateDeepCards} disabled={deepLoading} style={{flex:2,background:`linear-gradient(135deg,${topic.cp},${topic.cs})`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#fff",cursor:deepLoading?"default":"pointer",fontWeight:700,fontSize:16,opacity:deepLoading?0.6:1}}>{deepLoading?"מכינה...":"📚 ללמוד יותר לפני החידון"}</button>
         :<button onClick={advance} style={{flex:2,background:`linear-gradient(135deg,${topic.cp},${topic.cs})`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#fff",cursor:"pointer",fontWeight:700,fontSize:16}}>← הבא</button>
       }
     </div>
+    {done&&!deepLoading&&<button onClick={()=>nav("quiz",params)} style={{width:"100%",marginTop:8,background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,borderRadius:T.r.md,padding:"12px",color:T.muted,cursor:"pointer",fontSize:14}}>🎯 דלגי ישר לחידון</button>}
   </div>;
 }
 
