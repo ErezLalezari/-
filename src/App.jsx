@@ -708,10 +708,14 @@ function Store({children}) {
 
 // Online status
 function logQuizResult(qid, topic, correct, isOpen, answerTime) {
-  if (!supabase) return;
+  if (!supabase) { log("DB","quiz_results-skip",{reason:"no-supabase"}); return; }
+  log("DB","quiz_results-insert",{qid, topic:topic||"mixed", correct, isOpen, answerTime});
   supabase.from("quiz_results").insert({
     question_id: qid, topic: topic || "mixed", correct, is_open: isOpen, answer_time: answerTime
-  }).then(({error}) => { if (error) console.warn("[quiz_results]", error.message); });
+  }).then(({error}) => {
+    if (error) { log("DB","quiz_results-ERROR",{qid, message:error.message, code:error.code}); log("DB","quiz_results-ERROR",{message:error.message}); }
+    else log("DB","quiz_results-ok",{qid});
+  });
 }
 
 function useOnline() {
@@ -737,13 +741,26 @@ const AI_SYSTEM = `את מורה תנ"ך מומחית בשם "חוה" שמלמד
 - את מכירה את כל 24 ספרי התנ"ך לעומק`;
 
 async function callAI(prompt, maxTokens=400, customSystem=null) {
-  const res = await fetch(AI_PROXY_URL, {
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"},
-    body:JSON.stringify({prompt, maxTokens, systemPrompt: customSystem || AI_SYSTEM})
-  });
-  const d = await res.json();
-  return d.text||"";
+  const t0 = Date.now();
+  const promptPreview = (prompt||"").slice(0,140);
+  log("AI","request",{promptChars:(prompt||"").length, maxTokens, hasSystem:!!customSystem, promptPreview});
+  try {
+    const res = await fetch(AI_PROXY_URL, {
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pYnFua2h2YmdvYXZ3YW1obW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNTQ3MzAsImV4cCI6MjA5MDkzMDczMH0.CsiTq5vK7Pjsi51P9tixoHIt1ZDD53o0drcOIabckOA"},
+      body:JSON.stringify({prompt, maxTokens, systemPrompt: customSystem || AI_SYSTEM})
+    });
+    const d = await res.json();
+    const text = d.text||"";
+    const ms = Date.now()-t0;
+    log("AI","response",{status:res.status, ok:res.ok, ms, replyChars:text.length, replyPreview:text.slice(0,140), error:d.error||null});
+    if (!res.ok || d.error) log("AI","ERROR",{status:res.status, error:d.error||"non-2xx"});
+    if (text.length>0 && text.length<20) log("AI","WARN-short-reply",{text});
+    return text;
+  } catch(e) {
+    log("AI","ERROR",{message:e?.message||String(e), ms:Date.now()-t0});
+    throw e;
+  }
 }
 
 // Personal Helper — clarify a question or word
@@ -861,8 +878,18 @@ function answerEq(a, b) {
   const cb = cleanHebrew(String(b));
   if (ca === cb) return true;
   const PREFIX = /^[בלמשהוכ]/;
-  if (ca.length === cb.length + 1 && PREFIX.test(ca) && ca.slice(1) === cb) return true;
-  if (cb.length === ca.length + 1 && PREFIX.test(cb) && cb.slice(1) === ca) return true;
+  if (ca.length === cb.length + 1 && PREFIX.test(ca) && ca.slice(1) === cb) {
+    if (typeof window !== "undefined" && window.LEYA_LOGS) {
+      try { log("answerEq","prefix-match",{sel:String(a).slice(0,40), expected:String(b).slice(0,40), prefix:ca[0]}); } catch {}
+    }
+    return true;
+  }
+  if (cb.length === ca.length + 1 && PREFIX.test(cb) && cb.slice(1) === ca) {
+    if (typeof window !== "undefined" && window.LEYA_LOGS) {
+      try { log("answerEq","prefix-match",{sel:String(a).slice(0,40), expected:String(b).slice(0,40), prefix:cb[0]}); } catch {}
+    }
+    return true;
+  }
   return false;
 }
 
@@ -1278,7 +1305,7 @@ function DailyChallenge({nav}) {
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:false});
     logQuizResult(q.id, q.topic||"daily", ok, false, 0);
     // Update mastery if topic exists
-    if(supabase&&q.topic&&q.topic!=="daily"&&q.topic!=="mixed") recordAttempt(supabase, q.topic, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
+    if(supabase&&q.topic&&q.topic!=="daily"&&q.topic!=="mixed") recordAttempt(supabase, q.topic, 0, ok).catch(e=>log("Mastery","ERROR",{message:e?.message||String(e)}));
     setLoading(true);
     const fallback=ok?`✅ ${q.exp}`:`💡 התשובה הנכונה: ${q.a}. ${q.exp}`;
     const e=await explainAnswer({q:qShuffled,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>fallback);
@@ -1293,7 +1320,7 @@ function DailyChallenge({nav}) {
       <h2 style={{fontSize:19,fontWeight:800,lineHeight:1.6,margin:0}}>{qShuffled.q}</h2>
       {!isAnswered&&<div style={{fontSize:12,color:T.muted,marginTop:10}}>💡 {qShuffled.hint}</div>}
     </Card>
-    <div>{qShuffled.o.map((opt,i)=>{const st=!isAnswered?"default":answerEq(opt,qShuffled.a)?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
+    <div>{qShuffled.o.map((opt,i)=>{const st=!isAnswered?"default":answerEq(opt,qShuffled.a)?"correct":answerEq(opt,sel)?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
     {isAnswered&&<Card glow color={correct?T.success:T.danger} style={{borderColor:correct?`${T.success}44`:`${T.danger}44`}}>
       <div style={{fontSize:32,textAlign:"center",marginBottom:8}}>{correct?"🌟":"💪"}</div>
       {loading?<div style={{textAlign:"center",color:T.muted,animation:"pulse 1.2s infinite"}}>מסביר...</div>
@@ -1357,7 +1384,7 @@ function AIGenerator({nav}) {
         <h2 style={{fontSize:18,fontWeight:800,lineHeight:1.6,margin:0}}>{aiQ.q}</h2>
         {!sel&&<div style={{fontSize:12,color:T.muted,marginTop:8}}>💡 {aiQ.hint}</div>}
       </Card>
-      <div>{(aiQ.o||[]).map((opt,i)=>{const st=!sel?"default":answerEq(opt,aiQ.a)?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
+      <div>{(aiQ.o||[]).map((opt,i)=>{const st=!sel?"default":answerEq(opt,aiQ.a)?"correct":answerEq(opt,sel)?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
       {sel&&<Card glow color={answerEq(sel,aiQ.a)?T.success:T.danger}>
         <div style={{fontSize:32,textAlign:"center",marginBottom:8}}>{answerEq(sel,aiQ.a)?"🌟":"💪"}</div>
         {loadExpl?<div style={{textAlign:"center",color:T.muted,animation:"pulse 1.2s infinite"}}>מסביר...</div>
@@ -1592,13 +1619,14 @@ function Quiz({nav,params,online}) {
     if(!isExam){Audio.stop();Audio.tap();}
     const timeout=opt==="__timeout__";
     const ok=timeout?false:(isMulti?answerEq(opt,q.a):Engine.checkOpen(opt,q.acceptedAnswers||[]));
+    log("Quiz","answer",{qid:q.id, topic:state.session?.topic?.id, isMulti, sel:String(opt).slice(0,60), expected:String(q.a||"").slice(0,60), ok, timeout, time:at, mode:isExam?"exam":"normal"});
     setSel(timeout?"⏰ פג הזמן":opt);
     if(!isMulti)setOpenOk(ok);
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:!isMulti,answerTime:at});
     const tid=state.session?.topic?.id;
     logQuizResult(q.id, tid, ok, !isMulti, at);
     // Also update mastery system (L0 = story level for regular quiz)
-    if(supabase&&tid&&tid!=="mixed") recordAttempt(supabase, tid, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
+    if(supabase&&tid&&tid!=="mixed") recordAttempt(supabase, tid, 0, ok).catch(e=>log("Mastery","ERROR",{message:e?.message||String(e)}));
     if(ok){Audio.correct();Audio.vCorrect();doFlash("green");burst();}
     else{Audio.wrong();Audio.vWrong();doFlash("red");}
     const ca=isMulti?q.a:(q.acceptedAnswers||[])[0]||"";
@@ -2377,7 +2405,7 @@ function StudyQuiz({nav, topic, questions, online}) {
     logQuizResult(q.id, topic?.id||"study", ok, false, 0);
   };
   const next=()=>{setIdx(i=>i+1); setSel(null); setAnswered(false);};
-  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":answerEq(opt,sel)?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -2407,6 +2435,7 @@ function StudyQuiz({nav, topic, questions, online}) {
 
 // ── MATCHING PAIRS GAME ─────────────────────
 function MatchingPairs({nav}) {
+  log("MatchingPairs", "mount");
   const PAIRS=[
     {q:"אברהם",a:"אבי האומה"},{q:"משה",a:"יציאת מצרים"},{q:"דוד",a:"כותב תהילים"},
     {q:"שלמה",a:"בנה המקדש"},{q:"נח",a:"בנה התיבה"},{q:"יוסף",a:"פתר חלומות"},
@@ -2482,6 +2511,7 @@ function MatchingPairs({nav}) {
 
 // ── DIALOGUE WITH BIBLICAL CHARACTER ────────
 function Dialogue({nav,online}) {
+  log("Dialogue", "mount");
   const CHARACTERS=[
     {id:"moshe",name:"משה רבנו",emoji:"🔥",desc:"מנהיג יציאת מצרים",system:"את משה רבנו. דבר כמו משה — ענווה, חוכמה, ניסיון של 40 שנה במדבר. ספר על חוויותיך: הסנה הבוער, עשר המכות, קריעת הים, מתן תורה, 40 שנה במדבר."},
     {id:"david",name:"דוד המלך",emoji:"👑",desc:"מלך ומשורר",system:"את דוד המלך. דבר כמו דוד — אומץ, אמונה, אהבת מוזיקה. ספר על: הקרב עם גוליית, הבריחה משאול, כיבוש ירושלים, כתיבת תהילים."},
@@ -2499,6 +2529,7 @@ function Dialogue({nav,online}) {
   const send=async()=>{
     if(!input.trim()||loading||!char) return;
     const userMsg=input.trim();
+    log("Dialogue","user-msg",{char:char.id, msg:userMsg.slice(0,80), turn:messages.length});
     setInput("");
     const newMessages=[...messages,{role:"user",text:userMsg}];
     setMessages(newMessages);
@@ -2525,14 +2556,17 @@ function Dialogue({nav,online}) {
       :`לייה שואלת: "${userMsg}"\n\nענ/י כ${char.name}:`;
 
     try{
-      const reply=await callAI(userPrompt,250,characterSystem);
+      const reply=await callAI(userPrompt,512,characterSystem);
       const cleanReply=(reply||"").trim();
+      log("Dialogue","char-reply",{char:char.id, replyChars:cleanReply.length, preview:cleanReply.slice(0,80), tooShort:cleanReply.length<10});
       if(!cleanReply||cleanReply.length<3){
+        log("Dialogue","WARN-empty-reply",{char:char.id});
         setMessages(m=>[...m,{role:"char",text:`${char.emoji} סליחה לייה, לא הבנתי. תוכלי לנסח שוב?`}]);
       }else{
         setMessages(m=>[...m,{role:"char",text:cleanReply}]);
       }
     }catch(e){
+      log("Dialogue","ERROR",{char:char.id, message:e?.message||String(e)});
       setMessages(m=>[...m,{role:"char",text:"סליחה, יש בעיית חיבור. נסי שוב..."}]);
     }
     setLoading(false);
@@ -2574,6 +2608,7 @@ function Dialogue({nav,online}) {
 }
 
 function FillBlank({nav,online}) {
+  log("FillBlank", "mount");
   const {state,dispatch}=useS();
   const [questions,setQuestions]=useState([]);
   const [idx,setIdx]=useState(0);
@@ -2661,6 +2696,7 @@ function FillBlank({nav,online}) {
 
 // ── WORD SCRAMBLE GAME ──────────────────────
 function WordScramble({nav}) {
+  log("WordScramble", "mount");
   const [questions]=useState(()=>{
     const pool=[
       {word:"אברהם",hint:"האב הראשון"},{word:"משה",hint:"מנהיג יציאת מצרים"},
@@ -2876,6 +2912,7 @@ const SCREENS = {
 // ── TAB: HOME ───────────────────────────────
 // ── DAILY LESSON (Learn → Practice → Done) ──
 function DailyLesson({nav, params, online}) {
+  log("DailyLesson", "mount");
   const {state, dispatch} = useS();
   const day = params?.day;
   const dayData = getDay(day);
@@ -2923,13 +2960,15 @@ function DailyLesson({nav, params, online}) {
     if (answered) return;
     Audio.tap();
     const q = quizQuestions[quizIdx];
-    const ok = opt === q.a;
+    if (!q) { log("DailyLesson","WARN-no-question",{quizIdx, total:quizQuestions.length}); return; }
+    const ok = answerEq(opt, q.a);
+    log("DailyLesson","answer",{qid:q.id, day, sel:String(opt).slice(0,60), expected:String(q.a||"").slice(0,60), ok});
     setSel(opt); setAnswered(true);
     if (ok) {setCorrect(c => c + 1); Audio.correct(); Audio.vCorrect();}
     else {Audio.wrong(); Audio.vWrong();}
     logQuizResult(q.id, dayData.book, ok, false, 0);
     // Update mastery (Daily Lesson = L0 story level)
-    if(supabase&&dayData.book) recordAttempt(supabase, dayData.book, 0, ok).catch(e=>console.warn("[mastery]",e?.message));
+    if(supabase&&dayData.book) recordAttempt(supabase, dayData.book, 0, ok).catch(e=>log("Mastery","ERROR",{message:e?.message||String(e)}));
   };
   const nextQuestion = () => {
     if (quizIdx >= quizQuestions.length - 1) {
@@ -3361,6 +3400,7 @@ function TabOfficial({nav}) {
 
 // ── REAL QUIZ — practice with official questions ──
 function RealQuiz({nav, params, online}) {
+  log("RealQuiz", "mount");
   const stage=params?.stage||"school";
   const [phase,setPhase]=useState("intro"); // intro → learn → quiz
   const [questions,setQuestions]=useState([]);
@@ -3509,7 +3549,7 @@ ${sampleQs}
     }).then(()=>{});
   };
   const next=()=>{setIdx(i=>i+1);setSel(null);setAnswered(false);};
-  const optState=(opt)=>!answered?"default":cleanHebrew(opt)===cleanHebrew(q.answer_text)?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":cleanHebrew(opt)===cleanHebrew(q.answer_text)?"correct":answerEq(opt,sel)?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -3539,6 +3579,7 @@ ${sampleQs}
 
 // ── MOCK EXAM (30 questions, 40 minute timer) ──
 function MockExam({nav}) {
+  log("MockExam", "mount");
   const [questions,setQuestions]=useState([]);
   const [loading,setLoading]=useState(true);
   const [idx,setIdx]=useState(0);
@@ -3929,7 +3970,7 @@ function LevelQuiz({nav, params}) {
     setIdx(i=>i+1);setSel(null);setAnswered(false);
   };
 
-  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":answerEq(opt,sel)?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
