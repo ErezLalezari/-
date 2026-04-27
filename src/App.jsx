@@ -849,6 +849,23 @@ function cleanHebrew(text) {
   return text.replace(NIQUD_RANGE, "").replace(/\s+/g, " ").trim();
 }
 
+// Tolerant multiple-choice answer comparison.
+// Why: questions table sometimes stores `a` without the leading Hebrew
+// preposition (ב/ל/מ/ש/ה/ו/כ) while the matching option text DOES include it
+// — e.g. a="מערת המכפלה בחברון" vs option="במערת המכפלה בחברון". Plain ===
+// then marks the right answer wrong. We strip niqud, then accept either
+// direction of a single attached-prefix mismatch.
+function answerEq(a, b) {
+  if (a == null || b == null) return false;
+  const ca = cleanHebrew(String(a));
+  const cb = cleanHebrew(String(b));
+  if (ca === cb) return true;
+  const PREFIX = /^[בלמשהוכ]/;
+  if (ca.length === cb.length + 1 && PREFIX.test(ca) && ca.slice(1) === cb) return true;
+  if (cb.length === ca.length + 1 && PREFIX.test(cb) && cb.slice(1) === ca) return true;
+  return false;
+}
+
 // ─────────────────────────────────────────────
 // [8] DESIGN TOKENS
 // ─────────────────────────────────────────────
@@ -1245,7 +1262,7 @@ function DailyChallenge({nav}) {
   </div>;
 
   const qShuffled=useMemo(()=>Engine.shuffleOptions(q),[q]);
-  const correct=sel===qShuffled.a;
+  const correct=answerEq(sel,qShuffled.a);
   const isAnswered=sel!==null;
 
   const burst=()=>{const p=Array.from({length:22},(_,i)=>({id:i,x:20+Math.random()*60,c:["#FFD700","#FF6B6B","#4ECDC4","#FFB347","#C3A6FF"][i%5],s:8+Math.random()*8,d:Math.random()*0.3,r:Math.random()*360}));setConfetti(p);setTimeout(()=>setConfetti([]),2000);};
@@ -1254,7 +1271,7 @@ function DailyChallenge({nav}) {
     if(isAnswered)return;
     setAnsweredLocal(true);
     Audio.tap(); setSel(opt);
-    const ok=opt===qShuffled.a;
+    const ok=answerEq(opt,qShuffled.a);
     if(ok){Audio.correct();Audio.vCorrect();burst();}
     else{Audio.wrong();Audio.vWrong();}
     dispatch({type:"DAILY_DONE"});
@@ -1276,7 +1293,7 @@ function DailyChallenge({nav}) {
       <h2 style={{fontSize:19,fontWeight:800,lineHeight:1.6,margin:0}}>{qShuffled.q}</h2>
       {!isAnswered&&<div style={{fontSize:12,color:T.muted,marginTop:10}}>💡 {qShuffled.hint}</div>}
     </Card>
-    <div>{qShuffled.o.map((opt,i)=>{const st=!isAnswered?"default":opt===qShuffled.a?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
+    <div>{qShuffled.o.map((opt,i)=>{const st=!isAnswered?"default":answerEq(opt,qShuffled.a)?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
     {isAnswered&&<Card glow color={correct?T.success:T.danger} style={{borderColor:correct?`${T.success}44`:`${T.danger}44`}}>
       <div style={{fontSize:32,textAlign:"center",marginBottom:8}}>{correct?"🌟":"💪"}</div>
       {loading?<div style={{textAlign:"center",color:T.muted,animation:"pulse 1.2s infinite"}}>מסביר...</div>
@@ -1315,7 +1332,7 @@ function AIGenerator({nav}) {
   const handleAnswer=async(opt)=>{
     if(sel)return;
     Audio.tap();setSel(opt);
-    const ok=opt===aiQ.a;
+    const ok=answerEq(opt,aiQ.a);
     if(ok){Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
     setLoadExpl(true);
     const e=await explainAnswer({q:aiQ,correct:ok,userAnswer:opt,isCorrect:ok,isOpen:false}).catch(()=>ok?`✅ ${aiQ.exp}`:`💡 ${aiQ.a}. ${aiQ.exp||""}`);
@@ -1340,9 +1357,9 @@ function AIGenerator({nav}) {
         <h2 style={{fontSize:18,fontWeight:800,lineHeight:1.6,margin:0}}>{aiQ.q}</h2>
         {!sel&&<div style={{fontSize:12,color:T.muted,marginTop:8}}>💡 {aiQ.hint}</div>}
       </Card>
-      <div>{(aiQ.o||[]).map((opt,i)=>{const st=!sel?"default":opt===aiQ.a?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
-      {sel&&<Card glow color={sel===aiQ.a?T.success:T.danger}>
-        <div style={{fontSize:32,textAlign:"center",marginBottom:8}}>{sel===aiQ.a?"🌟":"💪"}</div>
+      <div>{(aiQ.o||[]).map((opt,i)=>{const st=!sel?"default":answerEq(opt,aiQ.a)?"correct":opt===sel?"wrong":"default";return<AnswerOpt key={i} opt={opt} idx={i} state={st} onClick={()=>handleAnswer(opt)}/>;})}</div>
+      {sel&&<Card glow color={answerEq(sel,aiQ.a)?T.success:T.danger}>
+        <div style={{fontSize:32,textAlign:"center",marginBottom:8}}>{answerEq(sel,aiQ.a)?"🌟":"💪"}</div>
         {loadExpl?<div style={{textAlign:"center",color:T.muted,animation:"pulse 1.2s infinite"}}>מסביר...</div>
           :<p style={{margin:0,lineHeight:1.8,fontSize:15}}>{expl}</p>}
         {!loadExpl&&<Btn v="ai" onClick={gen} style={{marginTop:14,marginBottom:0}}>✨ שאלה נוספת</Btn>}
@@ -1563,7 +1580,7 @@ function Quiz({nav,params,online}) {
   const isMulti=q.type===Q.MULTIPLE;
   const answered=sel!==null||openOk!==null;
   const isLast=session.idx>=session.queue.length-1;
-  const isCorrect=isMulti?sel===q.a:openOk===true;
+  const isCorrect=isMulti?answerEq(sel,q.a):openOk===true;
 
   const burst=()=>{const p=Array.from({length:22},(_,i)=>({id:i,x:20+Math.random()*60,c:["#FFD700","#FF6B6B","#4ECDC4","#FFB347","#C3A6FF"][i%5],s:8+Math.random()*8,d:Math.random()*0.3,r:Math.random()*360}));setConfetti(p);setTimeout(()=>setConfetti([]),1800);};
   const doFlash=(c)=>{setFlash(c);setTimeout(()=>setFlash(null),400);};
@@ -1574,7 +1591,7 @@ function Quiz({nav,params,online}) {
     const at=Math.round((Date.now()-startTime)/1000);
     if(!isExam){Audio.stop();Audio.tap();}
     const timeout=opt==="__timeout__";
-    const ok=timeout?false:(isMulti?opt===q.a:Engine.checkOpen(opt,q.acceptedAnswers||[]));
+    const ok=timeout?false:(isMulti?answerEq(opt,q.a):Engine.checkOpen(opt,q.acceptedAnswers||[]));
     setSel(timeout?"⏰ פג הזמן":opt);
     if(!isMulti)setOpenOk(ok);
     dispatch({type:"ANSWER",qid:q.id,correct:ok,isOpen:!isMulti,answerTime:at});
@@ -1601,7 +1618,7 @@ function Quiz({nav,params,online}) {
     setTimeLeft(EXAM_SECS);setStartTime(Date.now());
   };
 
-  const optState=(opt)=>{ if(!answered)return"default"; if(opt===q.a)return"correct"; if(opt===sel)return"wrong"; return"default"; };
+  const optState=(opt)=>{ if(!answered)return"default"; if(answerEq(opt,q.a))return"correct"; if(opt===sel)return"wrong"; return"default"; };
   const tc=topic?.cp||"#C3A6FF";
 
   return <div style={{position:"relative",display:"flex",flexDirection:"column",minHeight:"100%"}}>
@@ -1883,6 +1900,9 @@ function FeedbackBtn({screen}){
     setLoading(false);
   };
   if(!supabase)return null;
+  // Hide on screens that have a text input at the bottom — the FAB sat right
+  // on top of the chat field on /dialogue and Liya kept tapping it by mistake.
+  if(screen==='dialogue'||screen==='helper'||screen==='ai_help')return null;
   return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:72,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:48,height:48,fontSize:20,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
   {open&&<div style={{position:'fixed',bottom:120,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
     <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:'#FFD700'}}>💬 ספרי לנו</div>
@@ -2350,14 +2370,14 @@ function StudyQuiz({nav, topic, questions, online}) {
   const answer=(opt)=>{
     if(answered) return;
     Audio.tap();
-    const ok=opt===q.a;
+    const ok=answerEq(opt,q.a);
     setSel(opt); setAnswered(true);
     if(ok){setCorrect(c=>c+1); Audio.correct(); Audio.vCorrect();}
     else{Audio.wrong(); Audio.vWrong();}
     logQuizResult(q.id, topic?.id||"study", ok, false, 0);
   };
   const next=()=>{setIdx(i=>i+1); setSel(null); setAnswered(false);};
-  const optState=(opt)=>!answered?"default":opt===q.a?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":opt===sel?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -2376,10 +2396,10 @@ function StudyQuiz({nav, topic, questions, online}) {
     </Card>
     <div style={{marginTop:"auto"}}>
       {(q.o||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
-      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
-        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
+      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:answerEq(sel,q.a)?`${T.success}14`:`${T.danger}14`,border:`1px solid ${answerEq(sel,q.a)?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{answerEq(sel,q.a)?"🌟":"💪"}</div>
         <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{q.exp}</div>
-        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=pool.length-1?"✅ סיום":"הבאה ▶"}</button>
+        <button onClick={next} style={{width:"100%",marginTop:12,background:answerEq(sel,q.a)?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=pool.length-1?"✅ סיום":"הבאה ▶"}</button>
       </div>}
     </div>
   </div>;
@@ -2962,7 +2982,7 @@ function DailyLesson({nav, params, online}) {
       setPhase("done");
       return null;
     }
-    const optState = (opt) => !answered ? "default" : opt===q.a ? "correct" : opt===sel ? "wrong" : "default";
+    const optState = (opt) => !answered ? "default" : answerEq(opt,q.a) ? "correct" : opt===sel ? "wrong" : "default";
     return <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
         <div style={{flex:1,display:"flex",gap:4}}>
@@ -2979,10 +2999,10 @@ function DailyLesson({nav, params, online}) {
       </Card>
       <div style={{marginTop:"auto"}}>
         {(q.o||[]).map((opt,i) => <AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answerQuiz(opt)}/>)}
-        {answered && <div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
-          <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
+        {answered && <div style={{marginTop:10,padding:"14px 16px",background:answerEq(sel,q.a)?`${T.success}14`:`${T.danger}14`,border:`1px solid ${answerEq(sel,q.a)?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+          <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{answerEq(sel,q.a)?"🌟":"💪"}</div>
           <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{q.exp}</div>
-          <button onClick={nextQuestion} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{quizIdx >= quizQuestions.length-1 ? "✅ סיום" : "הבאה ▶"}</button>
+          <button onClick={nextQuestion} style={{width:"100%",marginTop:12,background:answerEq(sel,q.a)?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{quizIdx >= quizQuestions.length-1 ? "✅ סיום" : "הבאה ▶"}</button>
         </div>}
       </div>
     </div>;
@@ -3507,11 +3527,11 @@ ${sampleQs}
     </Card>
     <div style={{marginTop:"auto"}}>
       {(q.options||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
-      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.answer_text?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.answer_text?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
-        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.answer_text?"🌟":"💪"}</div>
+      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:answerEq(sel,q.answer_text)?`${T.success}14`:`${T.danger}14`,border:`1px solid ${answerEq(sel,q.answer_text)?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{answerEq(sel,q.answer_text)?"🌟":"💪"}</div>
         <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>התשובה הנכונה: <strong>{cleanHebrew(q.answer_text)}</strong></div>
         {q.source&&<div style={{fontSize:12,color:T.muted,marginTop:6,textAlign:"right"}}>📖 מקור: {q.source}</div>}
-        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.answer_text?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
+        <button onClick={next} style={{width:"100%",marginTop:12,background:answerEq(sel,q.answer_text)?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
       </div>}
     </div>
   </div>;
@@ -3862,7 +3882,7 @@ function LevelQuiz({nav, params}) {
   const answer=async(opt)=>{
     if(answered)return;
     Audio.tap();
-    const ok=opt===q.a;
+    const ok=answerEq(opt,q.a);
     setSel(opt);setAnswered(true);
     if(ok){setCorrect(c=>c+1);Audio.correct();Audio.vCorrect();}else{Audio.wrong();Audio.vWrong();}
     // Record to mastery system
@@ -3909,7 +3929,7 @@ function LevelQuiz({nav, params}) {
     setIdx(i=>i+1);setSel(null);setAnswered(false);
   };
 
-  const optState=(opt)=>!answered?"default":opt===q.a?"correct":opt===sel?"wrong":"default";
+  const optState=(opt)=>!answered?"default":answerEq(opt,q.a)?"correct":opt===sel?"wrong":"default";
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -3927,10 +3947,10 @@ function LevelQuiz({nav, params}) {
     </Card>
     <div style={{marginTop:"auto"}}>
       {q.options.map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
-      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:sel===q.a?`${T.success}14`:`${T.danger}14`,border:`1px solid ${sel===q.a?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
-        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{sel===q.a?"🌟":"💪"}</div>
-        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{sel===q.a?"":<>התשובה: <strong>{q.a}</strong>. </>}{q.exp}</div>
-        <button onClick={next} style={{width:"100%",marginTop:12,background:sel===q.a?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
+      {answered&&<div style={{marginTop:10,padding:"14px 16px",background:answerEq(sel,q.a)?`${T.success}14`:`${T.danger}14`,border:`1px solid ${answerEq(sel,q.a)?T.success+"44":T.danger+"44"}`,borderRadius:T.r.md}}>
+        <div style={{fontSize:24,textAlign:"center",marginBottom:6}}>{answerEq(sel,q.a)?"🌟":"💪"}</div>
+        <div style={{fontSize:14,lineHeight:1.7,textAlign:"right"}}>{answerEq(sel,q.a)?"":<>התשובה: <strong>{q.a}</strong>. </>}{q.exp}</div>
+        <button onClick={next} style={{width:"100%",marginTop:12,background:answerEq(sel,q.a)?`linear-gradient(135deg,${T.success},#3EA76A)`:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:T.r.md,padding:"14px",color:"#1a0533",cursor:"pointer",fontWeight:800,fontSize:15}}>{idx>=questions.length-1?"✅ סיום":"הבאה ▶"}</button>
       </div>}
     </div>
   </div>;

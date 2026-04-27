@@ -28,9 +28,19 @@ Deno.serve(async (req) => {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
 
+    // gemini-2.5-flash secretly spends part of maxOutputTokens on internal
+    // "thinking", which truncates the actual user-visible reply. Disable it
+    // (thinkingBudget: 0) so the full budget goes to the response. We also
+    // floor maxOutputTokens at 512 — under that, Hebrew replies were getting
+    // cut mid-word for Liya in the dialogue screen.
+    const effectiveMaxTokens = Math.max(maxTokens || 400, 512);
     const geminiBody: any = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+      generationConfig: {
+        maxOutputTokens: effectiveMaxTokens,
+        temperature: 0.7,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     };
 
     if (systemPrompt) {
