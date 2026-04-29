@@ -769,7 +769,7 @@ async function askHelper(question, context) {
 היא שואלת: "${question}"
 ההקשר: שאלת החידון היא "${context}"
 ענה בעברית פשוטה, 2-3 משפטים קצרים. אל תגלה את התשובה! רק עזור להבין את השאלה.`;
-  try { return await callAI(prompt,200); } catch(e) { return "לא הצלחתי לעזור כרגע, נסי שוב"; }
+  try { return await callAI(prompt,4096); } catch(e) { return "לא הצלחתי לעזור כרגע, נסי שוב"; }
 }
 
 // Generate variation of a question (for review mode)
@@ -780,7 +780,7 @@ async function generateVariation(originalQ, topicName) {
 לילדה בת 10. פורמט JSON בלבד:
 {"q":"שאלה חדשה","a":"תשובה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז","exp":"הסבר"}`;
   try {
-    const raw = await callAI(prompt,300);
+    const raw = await callAI(prompt,4096);
     const parsed = JSON.parse(raw.replace(/```json|```/g,"").trim());
     if (!parsed.q||!parsed.a||!parsed.o) return null;
     return {id:`var_${Date.now()}`,type:Q.MULTIPLE,...parsed,isVariation:true};
@@ -793,7 +793,7 @@ async function explainAnswer({q,correct,userAnswer,isCorrect,isOpen}) {
   const prompt = isCorrect
     ? `ענתה נכון על שאלת תנ"ך: "${q.q}". כתבי משפט עידוד קצר לילדה בת 10.`
     : `שאלת תנ"ך לילדה בת 10: "${q.q}". ענתה: "${userAnswer}". נכון: "${ca}". הסבר ב-2 משפטים פשוטים: מה נכון ולמה. אם יש מילה קשה הסבר בסוגריים.`;
-  try { return await callAI(prompt,200); } catch(e) { return isCorrect ? `✅ ${q.exp}` : `💡 ${ca}. ${q.exp}`; }
+  try { return await callAI(prompt,4096); } catch(e) { return isCorrect ? `✅ ${q.exp}` : `💡 ${ca}. ${q.exp}`; }
 }
 
 // Generate new AI question for topic
@@ -806,7 +806,7 @@ ${wrongHint}
 {"q":"השאלה","a":"התשובה הנכונה","o":["אפ1","אפ2","אפ3","אפ4"],"hint":"רמז קצר","exp":"הסבר קצר"}
 הכנס את התשובה הנכונה באחת מ-4 האפשרויות. ללא טקסט נוסף.`;
   try {
-    const raw = await callAI(prompt,300);
+    const raw = await callAI(prompt,4096);
     const clean = raw.replace(/```json|```/g,"").trim();
     const parsed = JSON.parse(clean);
     if (!parsed.q||!parsed.a||!parsed.o) return null;
@@ -820,7 +820,7 @@ async function tutorChat(userMessage, context="") {
 ${context ? `הקשר: ${context}` : ""}
 שאלת הילדה: "${userMessage}"
 ענה בעברית פשוטה, קצר (2-4 משפטים), חם ומעניין. אל תסביר יותר מדי.`;
-  try { return await callAI(prompt,400); }
+  try { return await callAI(prompt,4096); }
   catch { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
 }
 
@@ -2407,7 +2407,7 @@ function StudyMode({nav,online}) {
 - הכל בעברית פשוטה`;
 
     try{
-      const raw=await callAI(prompt,1500);
+      const raw=await callAI(prompt,4096);
       const clean=raw.replace(/```json|```/g,"").trim();
       const objMatch=clean.match(/\{[\s\S]*\}/);
       const parsed=objMatch?JSON.parse(objMatch[0]):null;
@@ -2674,7 +2674,7 @@ function Dialogue({nav,online}) {
       :`לייה שואלת: "${userMsg}"\n\nענ/י כ${char.name}:`;
 
     try{
-      const reply=await callAI(userPrompt,512,characterSystem);
+      const reply=await callAI(userPrompt,4096,characterSystem);
       const cleanReply=(reply||"").trim();
       log("Dialogue","char-reply",{char:char.id, replyChars:cleanReply.length, preview:cleanReply.slice(0,80), tooShort:cleanReply.length<10});
       if(!cleanReply||cleanReply.length<3){
@@ -2749,7 +2749,7 @@ function FillBlank({nav,online}) {
       const results=[];
       for(const p of prompts){
         try{
-          const raw=await callAI(p.prompt,200);
+          const raw=await callAI(p.prompt,4096);
           const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
           if(parsed.sentence&&parsed.answer) results.push({...parsed,topic:p.topic});
         }catch{}
