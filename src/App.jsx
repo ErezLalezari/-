@@ -753,8 +753,8 @@ async function callAI(prompt, maxTokens=400, customSystem=null) {
     const d = await res.json();
     const text = d.text||"";
     const ms = Date.now()-t0;
-    log("AI","response",{status:res.status, ok:res.ok, ms, replyChars:text.length, replyPreview:text.slice(0,140), error:d.error||null});
-    if (!res.ok || d.error) log("AI","ERROR",{status:res.status, error:d.error||"non-2xx"});
+    log("AI","response",{status:res.status, ok:res.ok, ms, replyChars:text.length, replyPreview:text.slice(0,140), error:d.error||null, finishReason:d.finishReason||null, blockReason:d.blockReason||null, upstreamStatus:d.upstreamStatus||null});
+    if (!res.ok || d.error) log("AI","ERROR",{status:res.status, error:d.error||"non-2xx", upstreamStatus:d.upstreamStatus||null, upstreamMessage:d.upstreamMessage||null, finishReason:d.finishReason||null, blockReason:d.blockReason||null});
     if (text.length>0 && text.length<20) log("AI","WARN-short-reply",{text});
     return text;
   } catch(e) {
@@ -3428,18 +3428,43 @@ function TabOfficial({nav}) {
   const [stats,setStats]=useState(null);
   useEffect(()=>{
     if(!supabase)return;
-    supabase.from("official_questions").select("year,stage,book").then(({data})=>{
-      if(!data)return;
-      const total=data.length;
+    // Pull all official questions in one go. Default Supabase limit is 1000 rows,
+    // but the table has ~1100, so we explicitly raise the limit. We also strip
+    // sentinel year values (9000+, 0/null) which were polluting the year-range
+    // display ("מהשנים 2015-9999").
+    const NOW = new Date().getFullYear();
+    // Supabase enforces a server-side 1000-row cap on .select(), so the old
+    // approach of summing rows from a single fetch was under-reporting by ~10%
+    // (school showed 328 instead of 344, etc). Use head:true count queries
+    // — they return exact counts via Content-Range without transferring rows.
+    const STAGE_IDS=["school","district","national","world"];
+    Promise.all([
+      // One row sample purely to populate byBook/byYear for the year-range
+      // header. Exact distributions aren't critical here, the user only sees
+      // the min/max year and per-book coverage on the map screen.
+      supabase.from("official_questions").select("year,book").limit(5000),
+      ...STAGE_IDS.map(s=>supabase.from("official_questions").select("id",{count:"exact",head:true}).eq("stage",s)),
+    ]).then(([sample,...counts])=>{
+      if(sample.error){log("TabOfficial","stats-error",sample.error.message);return;}
       const byStage={};
+      let officialTotal=0;
+      STAGE_IDS.forEach((s,i)=>{
+        const c=counts[i]?.count||0;
+        byStage[s]=c;
+        officialTotal+=c;
+      });
       const byYear={};
       const byBook={};
-      data.forEach(d=>{
-        byStage[d.stage]=(byStage[d.stage]||0)+1;
-        byYear[d.year]=(byYear[d.year]||0)+1;
+      (sample.data||[]).forEach(d=>{
+        // Filter out sentinel/placeholder years (e.g. 9000-9009, 9999) — only
+        // keep years that look like real exam years (2000..currentYear+1).
+        if(typeof d.year==="number" && d.year>=2000 && d.year<=NOW+1){
+          byYear[d.year]=(byYear[d.year]||0)+1;
+        }
         if(d.book) byBook[d.book]=(byBook[d.book]||0)+1;
       });
-      setStats({total,byStage,byYear,byBook,years:Object.keys(byYear).sort()});
+      const years=Object.keys(byYear).map(y=>+y).sort((a,b)=>a-b).map(String);
+      setStats({total:officialTotal,byStage,byYear,byBook,years});
     });
   },[]);
 
@@ -3454,7 +3479,7 @@ function TabOfficial({nav}) {
     <div style={{textAlign:"center",padding:"4px 0"}}>
       <div style={{fontSize:36}}>📜</div>
       <h2 style={{fontSize:20,fontWeight:900,margin:"4px 0 2px",color:"#fff"}}>חידון התנ"ך הרשמי</h2>
-      <div style={{fontSize:12,color:T.muted}}>{stats?`${stats.total} שאלות אמיתיות מהשנים ${stats.years[0]}-${stats.years[stats.years.length-1]}`:"טוען..."}</div>
+      <div style={{fontSize:12,color:T.muted}}>{stats?(stats.years.length>0?`${stats.total} שאלות אמיתיות מהשנים ${stats.years[0]}-${stats.years[stats.years.length-1]}`:`${stats.total} שאלות אמיתיות`):"טוען..."}</div>
     </div>
 
     {/* Mock Exam CTA */}
