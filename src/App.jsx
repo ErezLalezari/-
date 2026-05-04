@@ -3437,7 +3437,7 @@ function TabOfficial({nav}) {
     // approach of summing rows from a single fetch was under-reporting by ~10%
     // (school showed 328 instead of 344, etc). Use head:true count queries
     // — they return exact counts via Content-Range without transferring rows.
-    const STAGE_IDS=["school","district","national","world"];
+    const STAGE_IDS=["school","district","national","world","ai-generated"];
     Promise.all([
       // One row sample purely to populate byBook/byYear for the year-range
       // header. Exact distributions aren't critical here, the user only sees
@@ -3473,6 +3473,7 @@ function TabOfficial({nav}) {
     {id:"district",emoji:"🌆",name:"מחוזי",desc:"שלב מתקדם",color:"#FFD700"},
     {id:"national",emoji:"🇮🇱",name:"ארצי",desc:"גמר ארצי",color:"#FF8C00"},
     {id:"world",emoji:"🌍",name:"עולמי",desc:"חידון העולמי לנוער",color:"#FF6B6B"},
+    {id:"ai-generated",emoji:"🤖",name:"שאלות AI",desc:"שאלות תרגול נוספות מ-AI",color:"#C3A6FF"},
   ];
 
   return <div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto",gap:14}}>
@@ -3605,8 +3606,8 @@ ${sampleQs}
     setLearnIdx(0);
   };
 
-  const stageNames={school:"בית ספרי",district:"מחוזי",national:"ארצי",world:"עולמי"};
-  const stageColors={school:"#5DFC8A",district:"#FFD700",national:"#FF8C00",world:"#FF6B6B"};
+  const stageNames={school:"בית ספרי",district:"מחוזי",national:"ארצי",world:"עולמי","ai-generated":"שאלות AI"};
+  const stageColors={school:"#5DFC8A",district:"#FFD700",national:"#FF8C00",world:"#FF6B6B","ai-generated":"#C3A6FF"};
   const color=stageColors[stage];
 
   if(loading)return<div style={{padding:60,textAlign:"center",color:T.muted}}><div style={{fontSize:48,animation:"pulse 1.2s infinite"}}>📜</div><div style={{marginTop:12}}>טוען שאלות אמיתיות...</div></div>;
@@ -3621,7 +3622,18 @@ ${sampleQs}
         <p style={{color:T.muted,fontSize:14,margin:0}}>{questions.length} שאלות אמיתיות מהחידון הרשמי</p>
       </div>
       <div style={{padding:"14px 18px",background:"rgba(255,215,0,0.06)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:T.r.md,fontSize:14,lineHeight:1.7,color:"rgba(255,255,255,0.85)",textAlign:"right"}}>
-        💡 השאלות אמיתיות מהשנים <strong>{[...new Set(questions.map(q=>q.year))].sort().slice(0,3).join(", ")}</strong>. אם לא למדת את החומר, אני יכול ללמד אותך קצת לפני שנתחיל!
+        {(()=>{
+          // ai-generated rows have placeholder year sentinels (9000+); never
+          // surface those as if they were real exam years. For canonical
+          // stages, show up to 3 sample real years; otherwise show a generic
+          // intro string.
+          const NOW=new Date().getFullYear();
+          const realYears=[...new Set(questions.map(q=>q.year).filter(y=>typeof y==="number"&&y>=2000&&y<=NOW+1))].sort((a,b)=>a-b);
+          if(realYears.length>0){
+            return <>💡 השאלות אמיתיות מהשנים <strong>{realYears.slice(0,3).join(", ")}</strong>. אם לא למדת את החומר, אני יכול ללמד אותך קצת לפני שנתחיל!</>;
+          }
+          return <>💡 שאלות תרגול לחיזוק החומר. אם לא למדת את החומר, אני יכול ללמד אותך קצת לפני שנתחיל!</>;
+        })()}
       </div>
       <div style={{flex:1}}/>
       <button onClick={generateLearnCards} disabled={learnLoading||!online} style={{
@@ -3702,7 +3714,7 @@ ${sampleQs}
       <span style={{fontSize:12,color:T.muted}}>{idx+1}/{questions.length}</span>
     </div>
     <div style={{textAlign:"center",marginBottom:10}}>
-      <div style={{fontSize:11,color,fontWeight:700,letterSpacing:1.2}}>📜 חידון {stageNames[stage]} · {q.year}</div>
+      <div style={{fontSize:11,color,fontWeight:700,letterSpacing:1.2}}>📜 חידון {stageNames[stage]}{(typeof q.year==="number"&&q.year>=2000&&q.year<=new Date().getFullYear()+1)?` · ${q.year}`:""}</div>
     </div>
     <Card style={{padding:"22px 18px"}}>
       <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
@@ -3785,12 +3797,12 @@ function MockExam({nav}) {
   return<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     {/* Top bar with timer + progress */}
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-      <div style={{flex:1,fontSize:12,color:T.muted}}>שאלה {idx+1}/{questions.length} · {Object.keys(answers).length} ענת</div>
+      <div style={{flex:1,fontSize:12,color:T.muted}}>שאלה {idx+1}/{questions.length} · ענית על {Object.keys(answers).length}</div>
       <div style={{fontSize:16,fontWeight:800,color:timeColor,fontVariantNumeric:"tabular-nums"}}>⏱ {String(min).padStart(2,"0")}:{String(sec).padStart(2,"0")}</div>
     </div>
 
     <Card style={{padding:"18px 16px"}}>
-      <div style={{fontSize:11,color:T.gold,fontWeight:700,marginBottom:6,textAlign:"center"}}>📜 שאלה {idx+1} · חידון {q.year}</div>
+      <div style={{fontSize:11,color:T.gold,fontWeight:700,marginBottom:6,textAlign:"center"}}>📜 שאלה {idx+1}{(typeof q.year==="number"&&q.year>=2000&&q.year<=new Date().getFullYear()+1)?` · חידון ${q.year}`:""}</div>
       <h2 style={{fontSize:17,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
     </Card>
 
