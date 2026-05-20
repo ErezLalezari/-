@@ -570,8 +570,10 @@ const INIT = {
   audioOn:true, confidence:{},
   // Curriculum progress
   completedDays:[], currentDay:1, dayScores:{},
+  // UI preferences
+  fontScale:1, // 1 = normal, 1.15 = large, 1.3 = extra-large (feedback #26,#37)
 };
-const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily","audioOn","confidence","completedDays","currentDay","dayScores"];
+const PKEYS = ["name","streak","lastDay","total","correct","openCorrect","fastAnswers","topics","cards","unlocked","reviewSessions","examSessions","dailyDone","aiChats","lastPerfect","lastDaily","audioOn","confidence","completedDays","currentDay","dayScores","fontScale"];
 
 function load() {
   try { const r=localStorage.getItem(STORAGE_KEY); return r?{...INIT,...JSON.parse(r),session:null}:INIT; }
@@ -652,6 +654,7 @@ function reducer(state, action) {
       return {...state, aiChats:(state.aiChats||0)+1};
     case "CLEAR_ACH": return {...state,_newAch:[]};
     case "TOGGLE_AUDIO": return {...state,audioOn:!state.audioOn};
+    case "SET_FONT_SCALE": return {...state,fontScale:action.scale};
     case "COMPLETE_DAY": {
       const {day, score} = action;
       const completedDays = state.completedDays.includes(day) ? state.completedDays : [...state.completedDays,day];
@@ -675,6 +678,12 @@ function Store({children}) {
   },[]);
   useEffect(()=>{try{save(state);}catch(e){logError("Store",e,"save");}},[state]);
   useEffect(()=>{wrappedDispatch({type:"STREAK"});},[wrappedDispatch]);
+  // Apply font-scale preference (feedback #26,#37) — uses CSS `zoom` so the
+  // entire pixel-sized UI scales uniformly, not just fonts.
+  useEffect(()=>{
+    const scale=state.fontScale||1;
+    try{ document.documentElement.style.zoom = String(scale); }catch{}
+  },[state.fontScale]);
 
   // Load extra questions from Supabase and merge into DB
   useEffect(()=>{
@@ -726,6 +735,33 @@ function useOnline() {
     return()=>{ window.removeEventListener("online",h1); window.removeEventListener("offline",h0); };
   },[]);
   return on;
+}
+
+// PWA install prompt — captures the deferred beforeinstallprompt event so we
+// can let Liya add the app to her home screen with a single tap, instead of
+// her opening a WhatsApp link every time (feedback #36).
+function useInstallPrompt() {
+  const [evt,setEvt] = useState(null);
+  const [installed,setInstalled] = useState(false);
+  useEffect(()=>{
+    const handler=(e)=>{ e.preventDefault(); setEvt(e); };
+    const installedHandler=()=>{ setInstalled(true); setEvt(null); };
+    window.addEventListener("beforeinstallprompt",handler);
+    window.addEventListener("appinstalled",installedHandler);
+    // Detect already-installed (standalone display mode)
+    if(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches) setInstalled(true);
+    if(window.navigator.standalone) setInstalled(true);
+    return()=>{
+      window.removeEventListener("beforeinstallprompt",handler);
+      window.removeEventListener("appinstalled",installedHandler);
+    };
+  },[]);
+  const install=useCallback(async()=>{
+    if(!evt)return false;
+    try{ await evt.prompt(); const c=await evt.userChoice; setEvt(null); return c?.outcome==="accepted"; }
+    catch{ return false; }
+  },[evt]);
+  return {canInstall: !!evt && !installed, installed, install};
 }
 
 // Claude API wrapper
@@ -820,7 +856,17 @@ async function tutorChat(userMessage, context="") {
 ${context ? `הקשר: ${context}` : ""}
 שאלת הילדה: "${userMessage}"
 ענה בעברית פשוטה, קצר (2-4 משפטים), חם ומעניין. אל תסביר יותר מדי.`;
-  try { return await callAI(prompt,4096); }
+  // Liya frequently reported the tutor "going silent" (feedback #9,17,19,24).
+  // Gemini occasionally returns empty candidates on short Hebrew prompts —
+  // retry once before giving up, so transient blocks don't dead-end the chat.
+  try {
+    let reply = await callAI(prompt,4096);
+    if(!reply||!reply.trim()){
+      log("AI","tutor-retry");
+      reply = await callAI(prompt+"\n(נסי שוב לענות בעברית פשוטה.)",4096);
+    }
+    return reply&&reply.trim() ? reply : "התשובה לא הצליחה הפעם — נסי לנסח את השאלה בדרך אחרת ואני אענה 💙";
+  }
   catch { return "אני לא מצליח לענות כרגע. נסי שוב בעוד רגע! 💙"; }
 }
 
@@ -1388,12 +1434,24 @@ ${sampleText}
 function DailyChallenge({nav}) {
   const {state,dispatch}=useS();
   const q=useMemo(()=>Engine.getDailyQuestion(),[]);
+  const qShuffled=useMemo(()=>q?Engine.shuffleOptions(q):null,[q]);
   const [sel,setSel]=useState(null);
   const [expl,setExpl]=useState("");
   const [loading,setLoading]=useState(false);
   const [confetti,setConfetti]=useState([]);
   const [answeredLocal,setAnsweredLocal]=useState(false);
   const done=Engine.isDailyDone(state.lastDaily);
+
+  // Defensive: if for any reason the daily pool is empty (DB not loaded
+  // yet, etc.) don't render a black screen — show a clear fallback.
+  if(!q||!qShuffled)return <div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📅 אתגר יומי</h2></div>
+    <Card style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:48}}>⏳</div>
+      <p style={{color:T.muted,marginTop:8}}>טוען את אתגר היום...</p>
+      <Btn v="ghost" onClick={()=>nav("home")} style={{marginTop:12}}>חזרה לבית</Btn>
+    </Card>
+  </div>;
 
   if(done&&!answeredLocal&&!sel)return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><BackBtn onClick={()=>nav("home")}/><h2 style={{margin:0,fontSize:20}}>📅 אתגר יומי</h2></div>
@@ -1405,8 +1463,6 @@ function DailyChallenge({nav}) {
     </Card>
     <Btn v="ghost" onClick={()=>nav("home")}>חזרה לבית</Btn>
   </div>;
-
-  const qShuffled=useMemo(()=>Engine.shuffleOptions(q),[q]);
   const correct=answerEq(sel,qShuffled.a);
   const isAnswered=sel!==null;
 
@@ -1459,12 +1515,15 @@ function AIGenerator({nav}) {
   const [loadExpl,setLoadExpl]=useState(false);
   const [count,setCount]=useState(0);
 
-  // Get wrong concepts for this topic
+  // Get wrong concepts for this topic. Previously this useMemo referenced
+  // `wrongs` from inside its own initializer, which throws a TDZ
+  // ReferenceError on first render — that's what caused Liya's "black page"
+  // on bonus questions for Bereshit (feedback #20).
   const wrongs=useMemo(()=>{
-    const topicCards=Object.entries(state.cards)
+    return Object.entries(state.cards||{})
       .filter(([id,r])=>r.tc===0&&r.seen&&DB[selTopic.id]?.find(q=>q.id===id))
-      .map(([id])=>DB[selTopic.id]?.find(q=>q.id===id)?.q||"");
-    return wrongs.slice(0,3);
+      .map(([id])=>DB[selTopic.id]?.find(q=>q.id===id)?.q||"")
+      .slice(0,3);
   },[selTopic,state.cards]);
 
   const gen=async()=>{
@@ -2049,8 +2108,8 @@ function FeedbackBtn({screen}){
   // Hide on screens that have a text input at the bottom — the FAB sat right
   // on top of the chat field on /dialogue and Liya kept tapping it by mistake.
   if(screen==='dialogue'||screen==='helper'||screen==='ai_help')return null;
-  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:72,left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:48,height:48,fontSize:20,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
-  {open&&<div style={{position:'fixed',bottom:120,left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
+  return(<><button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:'calc(86px + env(safe-area-inset-bottom, 0px))',left:16,background:'rgba(255,215,0,0.15)',border:'1px solid rgba(255,215,0,0.44)',borderRadius:50,width:44,height:44,fontSize:18,cursor:'pointer',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center'}}>💬</button>
+  {open&&<div style={{position:'fixed',bottom:'calc(142px + env(safe-area-inset-bottom, 0px))',left:16,right:16,background:'#1a1040',border:'1px solid rgba(255,255,255,0.1)',borderRadius:24,padding:16,zIndex:8001}}>
     <div style={{fontWeight:700,fontSize:14,marginBottom:8,color:'#FFD700'}}>💬 ספרי לנו</div>
     {sent?<div style={{color:'#5DFC8A',textAlign:'center'}}>נשלח תודה</div>:<>
       <textarea value={text} onChange={e=>setText(e.target.value)} placeholder='מה לא עבד? מה אפשר לשפר?' dir='rtl' rows={3} style={{width:'100%',background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:12,padding:'10px 12px',color:'#fff',fontSize:14,resize:'none',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
@@ -2735,17 +2794,26 @@ function FillBlank({nav,online}) {
   const [score,setScore]=useState({c:0,t:0});
   const [loading,setLoading]=useState(true);
 
+  const [regenKey,setRegenKey]=useState(0);
   useEffect(()=>{
     const generate=async()=>{
-      setLoading(true);
-      const prompts=Array.from({length:5},()=>{
-        const topic=TOPICS[Math.floor(Math.random()*TOPICS.length)];
-        return{topic,prompt:`צור משפט השלמה על ספר ${topic.name} בתנ"ך לילדה בת 10.
-המשפט חייב להכיל מקום ריק אחד שמסומן ב ___.
+      setLoading(true);setIdx(0);setScore({c:0,t:0});setAnswer("");setResult(null);
+      // Pick 5 distinct topics (rather than 5 random-with-replacement) and
+      // inject a fresh nonce per session so Gemini doesn't return the same
+      // sentence templates each run (feedback #23).
+      const shuffledTopics=Engine.shuffle([...TOPICS]).slice(0,5);
+      const nonce=Math.random().toString(36).slice(2,8);
+      const prompts=shuffledTopics.map(topic=>({
+        topic,
+        prompt:`צור משפט השלמה ייחודי על ספר ${topic.name} בתנ"ך לילדה בת 10.
+דרישות:
+- המשפט חייב להכיל מקום ריק אחד שמסומן ב ___
+- בחר עובדה, דמות, מקום או אירוע ספציפי מהספר
+- המשפט שונה לחלוטין מהדוגמאות הסטנדרטיות
+- session-nonce: ${nonce}
 פורמט JSON בלבד:
 {"sentence":"המשפט עם ___","answer":"המילה החסרה","hint":"רמז קצר"}
-ללא טקסט נוסף.`};
-      });
+ללא טקסט נוסף.`}));
       const results=[];
       for(const p of prompts){
         try{
@@ -2769,7 +2837,7 @@ function FillBlank({nav,online}) {
       ]);
       setLoading(false);
     }
-  },[]);
+  },[regenKey]);
 
   if(loading) return<div style={{textAlign:"center",padding:60,color:T.muted}}><div style={{fontSize:40,marginBottom:12,animation:"pulse 1.2s infinite"}}>📝</div>יוצר משפטים...</div>;
   if(!questions.length) return<div style={{textAlign:"center",padding:60}}><p style={{color:T.muted}}>לא הצלחנו ליצור משפטים</p><Btn onClick={()=>nav("home")}>חזרה</Btn></div>;
@@ -2778,7 +2846,8 @@ function FillBlank({nav,online}) {
   if(!q) return<div style={{textAlign:"center",padding:30}}>
     <div style={{fontSize:48,marginBottom:12}}>🎉</div>
     <h2 style={{color:T.gold,fontSize:24}}>סיימת! {score.c}/{score.t}</h2>
-    <Btn onClick={()=>nav("home")} style={{marginTop:16}}>🏠 חזרה</Btn>
+    <Btn onClick={()=>setRegenKey(k=>k+1)} style={{marginTop:16}}>🔄 משפטים חדשים</Btn>
+    <Btn v="ghost" onClick={()=>nav("home")}>🏠 חזרה לבית</Btn>
   </div>;
 
   const check=()=>{
@@ -2813,33 +2882,77 @@ function FillBlank({nav,online}) {
 }
 
 // ── WORD SCRAMBLE GAME ──────────────────────
+// Expanded scramble word pool (feedback #16,#22 — Liya complained the game
+// kept showing the same words). We also avoid the 14 most recently shown
+// words via localStorage so back-to-back runs feel fresh.
+const SCRAMBLE_POOL=[
+  // Patriarchs / matriarchs
+  {word:"אברהם",hint:"האב הראשון"},{word:"יצחק",hint:"בן הזקונים של אברהם"},
+  {word:"יעקב",hint:"אבי 12 השבטים"},{word:"שרה",hint:"אשת אברהם"},
+  {word:"רבקה",hint:"אשת יצחק"},{word:"רחל",hint:"אמו של יוסף"},
+  {word:"לאה",hint:"אשת יעקב הראשונה"},
+  // Twelve sons
+  {word:"ראובן",hint:"הבכור של יעקב"},{word:"שמעון",hint:"שני לבני יעקב"},
+  {word:"לוי",hint:"אבי הכוהנים"},{word:"יהודה",hint:"שבט המלכות"},
+  {word:"דן",hint:"בן בלהה"},{word:"נפתלי",hint:"אילה שלוחה"},
+  {word:"גד",hint:"גדוד יגודנו"},{word:"אשר",hint:"אשרי שמן לחמו"},
+  {word:"יששכר",hint:"חמור גרם"},{word:"זבולון",hint:"לחוף ימים ישכון"},
+  {word:"יוסף",hint:"פתר חלומות"},{word:"בנימין",hint:"הבן הקטן"},
+  // Moshe & Exodus
+  {word:"משה",hint:"מנהיג יציאת מצרים"},{word:"אהרן",hint:"הכוהן הגדול"},
+  {word:"מרים",hint:"אחות משה"},{word:"יוכבד",hint:"אמו של משה"},
+  {word:"יתרו",hint:"חותן משה"},{word:"פרעה",hint:"מלך מצרים"},
+  {word:"בצלאל",hint:"בנה את המשכן"},
+  // Judges
+  {word:"יהושע",hint:"כבש את הארץ"},{word:"כלב",hint:"מרגל אמיץ"},
+  {word:"דבורה",hint:"שופטת ונביאה"},{word:"ברק",hint:"מצביא דבורה"},
+  {word:"גדעון",hint:"ניצח עם 300"},{word:"יפתח",hint:"נדר נדר טראגי"},
+  {word:"שמשון",hint:"גיבור בעל כוח"},{word:"דלילה",hint:"בגדה בשמשון"},
+  {word:"יעל",hint:"הרגה את סיסרא"},{word:"סיסרא",hint:"שר צבא יבין"},
+  // Kings & prophets
+  {word:"שמואל",hint:"הנביא שמשח מלכים"},{word:"שאול",hint:"המלך הראשון"},
+  {word:"דוד",hint:"המלך-המשורר"},{word:"גוליית",hint:"ענק פלשתי"},
+  {word:"יונתן",hint:"חברו של דוד"},{word:"אבשלום",hint:"בן דוד שמרד"},
+  {word:"שלמה",hint:"המלך החכם"},{word:"אליהו",hint:"עלה בסערה"},
+  {word:"אלישע",hint:"תלמיד אליהו"},{word:"ירמיהו",hint:"נביא החורבן"},
+  {word:"ישעיהו",hint:"חזון הנחמה"},{word:"יחזקאל",hint:"חזון העצמות"},
+  {word:"דניאל",hint:"בגוב אריות"},{word:"יונה",hint:"נבלע בדג"},
+  {word:"חזקיהו",hint:"מלך צדיק"},{word:"צדקיהו",hint:"מלך אחרון"},
+  // Megillot
+  {word:"רות",hint:"גיורת מנאמנות"},{word:"בועז",hint:"בעל רות"},
+  {word:"נעמי",hint:"חמותה של רות"},{word:"אסתר",hint:"הצילה את עמה"},
+  {word:"מרדכי",hint:"דוד אסתר"},{word:"המן",hint:"רשע פורים"},
+  {word:"אחשורוש",hint:"מלך פרס"},
+  // Restoration
+  {word:"עזרא",hint:"סופר הקודש"},{word:"נחמיה",hint:"בנה חומות"},
+  {word:"כורש",hint:"התיר את השיבה"},
+  // Misc & antagonists
+  {word:"קין",hint:"הרג את אחיו"},{word:"הבל",hint:"רועה צאן ראשון"},
+  {word:"נח",hint:"בנה תיבה"},{word:"חם",hint:"בנו של נח"},{word:"שם",hint:"בנו של נח"},
+  {word:"יפת",hint:"בנו של נח"},{word:"לוט",hint:"אחיין אברהם"},
+  {word:"בלעם",hint:"רצה לקלל"},{word:"בלק",hint:"שכר את בלעם"},
+  {word:"קורח",hint:"מרד במשה"},{word:"עכן",hint:"חטא בחרם יריחו"},
+  {word:"רחב",hint:"הסתירה מרגלים"},{word:"עתליה",hint:"מלכה רעה"},
+  {word:"יואב",hint:"שר צבא דוד"},{word:"אביגיל",hint:"אשת נבל ואז דוד"},
+  {word:"חנה",hint:"אמו של שמואל"},{word:"בתשבע",hint:"אמו של שלמה"},
+  {word:"אחאב",hint:"מלך רשע בישראל"},{word:"איזבל",hint:"אשתו של אחאב"},
+];
+const SCRAMBLE_RECENT_KEY="leya_scramble_recent";
+function pickFreshScrambleWords(count){
+  let recent=[];
+  try{ recent=JSON.parse(localStorage.getItem(SCRAMBLE_RECENT_KEY)||"[]"); }catch{}
+  const fresh=SCRAMBLE_POOL.filter(p=>!recent.includes(p.word));
+  const pool=fresh.length>=count?fresh:SCRAMBLE_POOL; // if we exhausted, reset
+  const picked=Engine.shuffle([...pool]).slice(0,count);
+  // Update recent window with last 2*count words
+  const newRecent=[...picked.map(p=>p.word),...recent].slice(0,count*2);
+  try{ localStorage.setItem(SCRAMBLE_RECENT_KEY,JSON.stringify(newRecent)); }catch{}
+  return picked;
+}
+
 function WordScramble({nav}) {
   log("WordScramble", "mount");
-  const [questions]=useState(()=>{
-    const pool=[
-      {word:"אברהם",hint:"האב הראשון"},{word:"משה",hint:"מנהיג יציאת מצרים"},
-      {word:"שמשון",hint:"גיבור בעל כוח"},{word:"דבורה",hint:"שופטת ונביאה"},
-      {word:"גוליית",hint:"ענק פלשתי"},{word:"שלמה",hint:"המלך החכם"},
-      {word:"אסתר",hint:"הצילה את עמה"},{word:"יונה",hint:"נבלע בדג"},
-      {word:"נחמיה",hint:"בנה חומות"},{word:"דניאל",hint:"בגוב אריות"},
-      {word:"רבקה",hint:"אשת יצחק"},{word:"יהושע",hint:"כבש את הארץ"},
-      {word:"ירמיהו",hint:"נביא החורבן"},{word:"בועז",hint:"בעל רות"},
-      {word:"יעקב",hint:"אבי 12 השבטים"},{word:"יוסף",hint:"פתר חלומות"},
-      {word:"שאול",hint:"המלך הראשון"},{word:"אהרן",hint:"הכוהן הגדול"},
-      {word:"מרים",hint:"אחות משה"},{word:"רחל",hint:"אמו של יוסף"},
-      {word:"נעמי",hint:"חמותה של רות"},{word:"חנה",hint:"אמו של שמואל"},
-      {word:"אליהו",hint:"עלה בסערה"},{word:"אלישע",hint:"תלמיד אליהו"},
-      {word:"גדעון",hint:"ניצח עם 300"},{word:"יפתח",hint:"נדר נדר טראגי"},
-      {word:"עשו",hint:"אחי יעקב הגדול"},{word:"ישמעאל",hint:"בן הגר"},
-      {word:"בנימין",hint:"הבן הקטן"},{word:"יהודה",hint:"שבט המלכות"},
-      {word:"כורש",hint:"התיר את השיבה"},{word:"המן",hint:"רשע פורים"},
-      {word:"מרדכי",hint:"דוד אסתר"},{word:"פרעה",hint:"מלך מצרים"},
-      {word:"דלילה",hint:"בגדה בשמשון"},{word:"יעל",hint:"הרגה את סיסרא"},
-      {word:"בלעם",hint:"רצה לקלל"},{word:"קורח",hint:"מרד במשה"},
-      {word:"צדקיהו",hint:"מלך אחרון"},{word:"חזקיהו",hint:"מלך צדיק"},
-    ];
-    return Engine.shuffle([...pool]).slice(0,7);
-  });
+  const [questions,setQuestions]=useState(()=>pickFreshScrambleWords(7));
   const [idx,setIdx]=useState(0);
   const [letters,setLetters]=useState([]);
   const [selected,setSelected]=useState([]);
@@ -2857,7 +2970,8 @@ function WordScramble({nav}) {
   if(!q) return<div style={{textAlign:"center",padding:30}}>
     <div style={{fontSize:48,marginBottom:12}}>🎉</div>
     <h2 style={{color:T.gold,fontSize:24}}>סיימת! {score.c}/{score.t}</h2>
-    <Btn onClick={()=>nav("home")} style={{marginTop:16}}>🏠 חזרה</Btn>
+    <Btn onClick={()=>{setQuestions(pickFreshScrambleWords(7));setIdx(0);setScore({c:0,t:0});}} style={{marginTop:16}}>🔄 מילים חדשות</Btn>
+    <Btn v="ghost" onClick={()=>nav("home")}>🏠 חזרה לבית</Btn>
   </div>;
 
   const tap=(letter)=>{
@@ -3197,6 +3311,7 @@ function TabHome({nav}) {
   const dailyDone = Engine.isDailyDone(state?.lastDaily);
   const [nextTask,setNextTask]=useState(null);
   const [readiness,setReadiness]=useState(null);
+  const {canInstall, install} = useInstallPrompt();
 
   useEffect(()=>{
     if(!ctx) log("TabHome","no-context");
@@ -3229,6 +3344,13 @@ function TabHome({nav}) {
       <h1 style={{fontSize:22,fontWeight:900,margin:0,background:`linear-gradient(135deg,${T.gold},#FF8C00)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>שלום {state.name}! 🌟</h1>
       <div style={{fontSize:13,color:T.muted,marginTop:2}}>רצף {state.streak}🔥 · {state.correct} נכון</div>
     </div>
+
+    {/* PWA install banner — feedback #36 (icon on home screen) */}
+    {canInstall && <button onClick={install} style={{
+      background:`linear-gradient(135deg,${T.gold}22,#FF8C0011)`,border:`1px solid ${T.gold}66`,
+      borderRadius:T.r.md,padding:"10px 14px",cursor:"pointer",color:T.gold,fontWeight:700,fontSize:13,
+      display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+    }}>📲 התקיני את האפליקציה במסך הבית</button>}
 
     {/* HERO: Next Mastery Task */}
     {nextTask&&BOOK_BY_ID[nextTask.bookId]&&LEVELS[nextTask.level]?(()=>{
@@ -3418,7 +3540,30 @@ function TabProfile({nav}) {
       <button onClick={()=>dispatch({type:"TOGGLE_AUDIO"})} style={{flex:1,padding:"12px",background:state.audioOn?"rgba(69,183,209,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${state.audioOn?"rgba(69,183,209,0.3)":T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:state.audioOn?"#45B7D1":T.muted,fontSize:13,fontWeight:700}}>🔊 {state.audioOn?"קול פעיל":"קול כבוי"}</button>
       <button onClick={()=>nav("summary")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.sm,cursor:"pointer",color:T.muted,fontSize:13,fontWeight:700}}>📊 סיכום מלא</button>
     </div>
-    <button onClick={()=>nav("__launcher__")} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.08)`,borderRadius:T.r.sm,cursor:"pointer",color:"rgba(255,255,255,0.3)",fontSize:13,marginTop:4}}>🏠 חזרה לבחירת אפליקציות</button>
+
+    {/* Font-scale picker (feedback #26,#37 — "המסך קטן, להגדיל") */}
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border}`,borderRadius:T.r.sm}}>
+      <span style={{fontSize:13,color:T.muted,fontWeight:700,flexShrink:0}}>🔍 גודל מסך:</span>
+      {[
+        {scale:1,    label:"רגיל",  fs:13},
+        {scale:1.15, label:"גדול",  fs:15},
+        {scale:1.3,  label:"ענק",   fs:17},
+      ].map(opt=>{
+        const active=(state.fontScale||1)===opt.scale;
+        return <button key={opt.scale} onClick={()=>dispatch({type:"SET_FONT_SCALE",scale:opt.scale})} style={{
+          flex:1,padding:"8px 4px",
+          background:active?"rgba(255,215,0,0.18)":"rgba(255,255,255,0.04)",
+          border:`1px solid ${active?"rgba(255,215,0,0.5)":T.border}`,
+          borderRadius:T.r.xs,cursor:"pointer",
+          color:active?T.gold:"#fff",fontSize:opt.fs,fontWeight:active?800:600,
+        }}>{opt.label}</button>;
+      })}
+    </div>
+
+    {/* Launcher re-entry — feedback #10 (Liya got stuck inside bible app
+        with no way back to the app picker). Promoted from a near-invisible
+        ghost button to a primary action. */}
+    <button onClick={()=>nav("__launcher__")} style={{width:"100%",padding:"14px",background:`linear-gradient(135deg,#00C9FF22,#92FE9D11)`,border:`1.5px solid rgba(0,201,255,0.4)`,borderRadius:T.r.md,cursor:"pointer",color:"#00C9FF",fontSize:14,fontWeight:800,marginTop:4}}>🏠 חזרה לבחירת אפליקציות</button>
   </div>;
 }
 
@@ -4394,11 +4539,12 @@ function Router({onLauncher}) {
       html,body{overscroll-behavior:none;overflow:hidden;height:100%;margin:0;padding:0;}
     `}</style>
 
-    {/* Top header on sub-screens */}
+    {/* Top header on sub-screens — back + home, both with text labels so
+        Liya can actually find them (feedback #5,#8,#13,#15,#18,#21). */}
     {isSubScreen&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(10,8,24,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",zIndex:50,flexShrink:0,position:"relative"}}>
-      <button onClick={goBack} aria-label="חזור" style={{minWidth:44,minHeight:44,borderRadius:22,background:"rgba(255,215,0,0.1)",border:"1.5px solid rgba(255,215,0,0.3)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:T.gold,fontWeight:700,padding:0}}>‹</button>
+      <button onClick={goBack} aria-label="חזור" style={{minHeight:44,padding:"0 14px",borderRadius:22,background:"rgba(255,215,0,0.15)",border:"1.5px solid rgba(255,215,0,0.45)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontSize:14,color:T.gold,fontWeight:800}}><span style={{fontSize:20,lineHeight:1}}>‹</span> חזרה</button>
       <div style={{flex:1,fontSize:15,fontWeight:700,color:"#fff",textAlign:"center"}}>{SCREEN_LABELS[subScreen?.screen]||""}</div>
-      <button onClick={()=>{setSubScreen(null);setTab("home");}} aria-label="בית" style={{minWidth:44,minHeight:44,borderRadius:22,background:"rgba(255,255,255,0.06)",border:"1.5px solid rgba(255,255,255,0.15)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"#fff",padding:0}}>🏠</button>
+      <button onClick={()=>{setSubScreen(null);setTab("home");}} aria-label="בית" style={{minHeight:44,padding:"0 12px",borderRadius:22,background:"rgba(255,255,255,0.08)",border:"1.5px solid rgba(255,255,255,0.2)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontSize:14,color:"#fff",fontWeight:700}}><span style={{fontSize:18}}>🏠</span> בית</button>
     </div>}
 
     {/* Main content area */}
@@ -4434,6 +4580,7 @@ const APPS = [
 function Launcher({onSelect}) {
   const hour=new Date().getHours();
   const greeting=hour<12?"בוקר טוב":hour<17?"צהריים טובים":hour<21?"ערב טוב":"לילה טוב";
+  const {canInstall, install} = useInstallPrompt();
 
   return <div style={{minHeight:"100vh",height:"100dvh",background:T.bg,direction:"rtl",color:T.text,fontFamily:"'Segoe UI',Tahoma,sans-serif",display:"flex",flexDirection:"column",padding:"0 16px env(safe-area-inset-bottom,16px)"}}>
     <style>{`
@@ -4467,6 +4614,13 @@ function Launcher({onSelect}) {
         {!app.ready&&<div style={{position:"absolute",top:8,left:8,background:"rgba(255,255,255,0.08)",borderRadius:8,padding:"2px 8px",fontSize:10,color:"rgba(255,255,255,0.3)"}}>🔒</div>}
       </button>)}
     </div>
+
+    {/* Install button — only when Chrome/Edge offer the prompt and app isn't already installed */}
+    {canInstall && <button onClick={install} style={{
+      background:`linear-gradient(135deg,${T.gold},#FF8C00)`,border:"none",borderRadius:24,
+      padding:"12px 20px",margin:"8px 0",cursor:"pointer",color:"#1a0533",fontWeight:800,fontSize:14,
+      boxShadow:"0 4px 16px rgba(255,215,0,0.3)",position:"relative",zIndex:1,
+    }}>📲 התקיני את האפליקציה במסך הבית</button>}
 
     {/* Footer */}
     <div style={{textAlign:"center",padding:"8px 0 16px",position:"relative",zIndex:1}}>
