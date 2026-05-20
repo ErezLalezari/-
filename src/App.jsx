@@ -891,8 +891,20 @@ function useReminders(enabled) {
   const schedule=useCallback(()=>{
     clearTimeout(ref.current);
     ref.current=setTimeout(()=>{
-      if(document.visibilityState!=="visible"&&Notification.permission==="granted")
-        new Notification("📖 זמן לחידון!",{body:`${STUDENT_NAME}, שאלה אחת לפני בית הספר? 🌟`});
+      if(document.visibilityState!=="visible"&&Notification.permission==="granted") {
+        // Non-blocking, silent reminder (feedback #38) — auto-dismisses, no
+        // sound, dedupe by tag so back-to-back reminders don't pile up.
+        try {
+          new Notification("📖 זמן לחידון!",{
+            body:`${STUDENT_NAME}, שאלה אחת לפני בית הספר? 🌟`,
+            tag:"leya-daily",
+            silent:true,
+            requireInteraction:false,
+            icon:"/icon-192.png",
+            badge:"/icon-192.png",
+          });
+        } catch(e) { log("Reminders","ERROR",{message:e?.message||String(e)}); }
+      }
       schedule();
     },Engine.msReminder());
   },[]);
@@ -1726,6 +1738,10 @@ function Quiz({nav,params,online}) {
   const [helperQ,setHelperQ]=useState("");
   const [helperA,setHelperA]=useState("");
   const [helperLoading,setHelperLoading]=useState(false);
+  // Post-wrong "teach me the material" expandable (feedback #34)
+  const [teachOpen,setTeachOpen]=useState(false);
+  const [teachText,setTeachText]=useState("");
+  const [teachLoading,setTeachLoading]=useState(false);
 
   const topic=params?.topic;
   const mode=params?.mode||MODE.NORMAL;
@@ -1820,6 +1836,7 @@ function Quiz({nav,params,online}) {
     if(isLast){if(session.correct===session.total)Audio.fanfare();dispatch({type:"END"});nav("result");return;}
     dispatch({type:"NEXT"});
     setSel(null);setOpenOk(null);setExpl("");setHint(false);setHelperOpen(false);setHelperQ("");setHelperA("");
+    setTeachOpen(false);setTeachText("");
     setTimeLeft(EXAM_SECS);setStartTime(Date.now());
   };
 
@@ -1858,10 +1875,12 @@ function Quiz({nav,params,online}) {
       {q.imageUrl?<img src={q.imageUrl} alt="" style={{width:"100%",maxHeight:200,objectFit:"contain",borderRadius:T.r.sm,marginBottom:12,background:"rgba(255,255,255,0.05)"}}/>
         :<div style={{fontSize:42,marginBottom:10}}>{mode===MODE.EXAM?"🎓":topic?.emoji||"📖"}</div>}
       <h2 style={{fontSize:24,fontWeight:800,lineHeight:1.7,margin:0}}>{q.q}</h2>
+      {/* Help row — promoted from muted-gray ghosts to visible color
+          chips so Liya actually notices them (feedback #27, #28). */}
       {!isExam&&<div style={{display:"flex",justifyContent:"center",gap:8,marginTop:14,flexWrap:"wrap"}}>
-        {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:T.muted,cursor:"pointer",fontSize:13}}>{hint?"🙈 הסתר":"💡 רמז"}</button>}
-        {!answered&&online&&<button onClick={()=>setHelperOpen(h=>!h)} style={{background:helperOpen?"rgba(0,201,255,0.1)":"none",border:`1px solid ${helperOpen?"#00C9FF":T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:helperOpen?"#00C9FF":T.muted,cursor:"pointer",fontSize:13}}>🤖 עוזר אישי</button>}
-        <button onClick={()=>{ if(speaking){Audio.stop();setSpeaking(false);}else{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);}}} style={{background:speaking?`${T.gold}20`:"none",border:`1px solid ${speaking?T.gold:T.border}`,borderRadius:T.r.xs,padding:"6px 14px",color:speaking?T.gold:T.muted,cursor:"pointer",fontSize:13}}>{speaking?"🔊":"🔈"}</button>
+        {!answered&&<button onClick={()=>setHint(h=>!h)} style={{background:hint?`${T.gold}22`:`${T.gold}11`,border:`1.5px solid ${T.gold}66`,borderRadius:T.r.sm,padding:"8px 14px",color:T.gold,cursor:"pointer",fontSize:13,fontWeight:700}}>{hint?"🙈 הסתר רמז":"💡 רמז"}</button>}
+        {!answered&&online&&<button onClick={()=>setHelperOpen(h=>!h)} style={{background:helperOpen?"rgba(0,201,255,0.18)":"rgba(0,201,255,0.08)",border:`1.5px solid ${helperOpen?"#00C9FF":"rgba(0,201,255,0.4)"}`,borderRadius:T.r.sm,padding:"8px 14px",color:"#00C9FF",cursor:"pointer",fontSize:13,fontWeight:700}}>🤖 העוזר האישי שלי</button>}
+        <button onClick={()=>{ if(speaking){Audio.stop();setSpeaking(false);}else{Audio.speak(q.q);setSpeaking(true);setTimeout(()=>setSpeaking(false),q.q.length*80);}}} style={{background:speaking?`${T.gold}20`:"rgba(255,255,255,0.06)",border:`1.5px solid ${speaking?T.gold:T.border}`,borderRadius:T.r.sm,padding:"8px 14px",color:speaking?T.gold:"#fff",cursor:"pointer",fontSize:13,fontWeight:600}}>{speaking?"🔊 קוראת...":"🔈 הקריאי לי"}</button>
       </div>}
       {hint&&!isExam&&<div style={{marginTop:10,padding:"10px 16px",background:`${T.gold}16`,borderRadius:T.r.sm,color:T.gold,fontSize:14,lineHeight:1.6}}>💡 {q.hint}</div>}
       {helperOpen&&!answered&&<div style={{marginTop:10,background:"rgba(0,201,255,0.06)",border:"1px solid rgba(0,201,255,0.2)",borderRadius:T.r.sm,padding:14}}>
@@ -1893,6 +1912,26 @@ function Quiz({nav,params,online}) {
             <div style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:4}}>📖 מקור וידע</div>
             <div style={{fontSize:14,lineHeight:1.8,color:"rgba(255,255,255,0.8)"}}>{q.exp}</div>
             <div style={{fontSize:13,color:T.gold,marginTop:6}}>✅ התשובה הנכונה: <strong>{q.a||(q.acceptedAnswers||[])[0]||""}</strong></div>
+          </div>}
+          {/* Teach-me-the-material expandable on wrong answer (feedback #34) */}
+          {!isCorrect&&online&&<button onClick={async()=>{
+            if(teachOpen){setTeachOpen(false);return;}
+            setTeachOpen(true);
+            if(teachText) return;
+            setTeachLoading(true);
+            const topicName=topic?.name||state.session?.topic?.name||"תנ\"ך";
+            const prompt=`לייה (בת 10) טעתה בשאלה הזו: "${q.q}"
+התשובה הנכונה: "${q.a||(q.acceptedAnswers||[])[0]||""}"
+הנושא: ${topicName}.
+הסבירי בעברית פשוטה את החומר הרלוונטי בצורה שעוזרת לה לזכור — 3-5 משפטים קצרים, ציטוט פסוק רלוונטי אם אפשר, וטיפ לזכירה. אל תחזרי על מילת השאלה.`;
+            try{ const t=await callAI(prompt,4096); setTeachText(t||q.exp||"החומר: " + (q.exp||"")); }
+            catch{ setTeachText(q.exp||"לא הצלחנו לטעון את החומר כרגע."); }
+            setTeachLoading(false);
+          }} style={{marginTop:10,width:"100%",background:teachOpen?"rgba(78,205,196,0.18)":"rgba(78,205,196,0.08)",border:`1.5px solid ${teachOpen?"#4ECDC4":"rgba(78,205,196,0.4)"}`,borderRadius:T.r.sm,padding:"10px 14px",color:"#4ECDC4",cursor:"pointer",fontSize:14,fontWeight:700}}>{teachOpen?"🙈 הסתר חומר":"📖 ספרי לי את החומר"}</button>}
+          {teachOpen&&!isCorrect&&<div style={{marginTop:8,padding:"12px 14px",background:"rgba(78,205,196,0.06)",border:"1px solid rgba(78,205,196,0.25)",borderRadius:T.r.sm,textAlign:"right"}}>
+            <div style={{fontSize:12,color:"#4ECDC4",fontWeight:700,marginBottom:6}}>📚 חזרה על החומר</div>
+            {teachLoading?<div style={{color:T.muted,animation:"pulse 1.2s infinite"}}>מכינה הסבר...</div>
+              :<div style={{fontSize:14,lineHeight:1.8,color:"rgba(255,255,255,0.9)",whiteSpace:"pre-wrap"}}>{teachText}</div>}
           </div>}
         </>}
       {!loadExpl&&<Btn v={isCorrect?"success":"primary"} onClick={next} style={{marginTop:12,marginBottom:0}}>{isLast?"סיום! 🏁":"הבאה ▶"}</Btn>}
@@ -3644,6 +3683,25 @@ function TabOfficial({nav}) {
       <div style={{fontSize:20,color:"#FF6B6B"}}>◀</div>
     </button>
 
+    {/* Marathon study mode (feedback #32 — "want to memorize all the material
+        through the questions"). One-tap entry to the largest stage pool. */}
+    {stats&&stats.byStage&&(stats.byStage.school||stats.byStage["ai-generated"])>0&&<button onClick={()=>{
+      const biggest=Object.entries(stats.byStage).sort((a,b)=>b[1]-a[1])[0]?.[0]||"school";
+      nav("realquiz",{stage:biggest,marathon:true});
+    }} style={{
+      background:`linear-gradient(135deg,#4ECDC422,#45B7D111)`,
+      border:`2px solid rgba(78,205,196,0.45)`,
+      borderRadius:T.r.lg,padding:"16px",cursor:"pointer",
+      display:"flex",alignItems:"center",gap:14,
+    }}>
+      <div style={{fontSize:38}}>📚</div>
+      <div style={{textAlign:"right",flex:1}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#4ECDC4"}}>שינון כל החומר</div>
+        <div style={{fontSize:12,color:T.muted,marginTop:2}}>מרתון שאלות מהמאגר הגדול ביותר</div>
+      </div>
+      <div style={{fontSize:18,color:"#4ECDC4"}}>◀</div>
+    </button>}
+
     {/* Practice by stage */}
     <div>
       <div style={{fontSize:13,color:T.muted,fontWeight:700,marginBottom:8,textAlign:"right"}}>תרגול לפי שלב:</div>
@@ -3861,9 +3919,12 @@ ${sampleQs}
     <div style={{textAlign:"center",marginBottom:10}}>
       <div style={{fontSize:11,color,fontWeight:700,letterSpacing:1.2}}>📜 חידון {stageNames[stage]}{(typeof q.year==="number"&&q.year>=2000&&q.year<=new Date().getFullYear()+1)?` · ${q.year}`:""}</div>
     </div>
+    {/* Pasuk reference shown prominently BEFORE the question (feedback #35) */}
+    {q.source&&!answered&&<div style={{padding:"10px 14px",background:`rgba(78,205,196,0.08)`,border:`1px solid rgba(78,205,196,0.28)`,borderRadius:T.r.sm,fontSize:13,color:"#4ECDC4",fontWeight:700,textAlign:"right"}}>
+      📖 קראי את הפסוקים קודם: <span style={{color:"#fff"}}>{q.source}</span>
+    </div>}
     <Card style={{padding:"22px 18px"}}>
       <h2 style={{fontSize:18,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
-      {q.source&&!answered&&<div style={{fontSize:11,color:T.muted,marginTop:8,textAlign:"left"}}>📖 {q.source}</div>}
     </Card>
     <div style={{marginTop:"auto"}}>
       {(q.options||[]).map((opt,i)=><AnswerOpt key={i} opt={opt} idx={i} state={optState(opt)} onClick={()=>answer(opt)}/>)}
@@ -3948,6 +4009,7 @@ function MockExam({nav}) {
 
     <Card style={{padding:"18px 16px"}}>
       <div style={{fontSize:11,color:T.gold,fontWeight:700,marginBottom:6,textAlign:"center"}}>📜 שאלה {idx+1}{(typeof q.year==="number"&&q.year>=2000&&q.year<=new Date().getFullYear()+1)?` · חידון ${q.year}`:""}</div>
+      {q.source&&<div style={{fontSize:12,color:"#4ECDC4",fontWeight:700,marginBottom:8,textAlign:"right"}}>📖 מקור: <span style={{color:"#fff"}}>{q.source}</span></div>}
       <h2 style={{fontSize:17,fontWeight:700,lineHeight:1.8,margin:0,textAlign:"right"}}>{cleanHebrew(q.question)}</h2>
     </Card>
 
